@@ -1,0 +1,159 @@
+/**   Copyright 2014 Paul Roit
+*
+*   Licensed under the Apache License, Version 2.0 (the "License");
+*   you may not use this file except in compliance with the License.
+*   You may obtain a copy of the License at
+*
+*       http://www.apache.org/licenses/LICENSE-2.0
+*
+*   Unless required by applicable law or agreed to in writing, software
+*   distributed under the License is distributed on an "AS IS" BASIS,
+*   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+*   See the License for the specific language governing permissions and
+*   limitations under the License.
+*/
+
+# Diving deeper into the structure and layout of a JPEG2000 file
+
+The goal of this article is to let anyone interested to dive 
+professionally into the stream of bits that compose a JPEG2000 image,
+and show how to effortlessly manipulate this stream. 
+
+A noteworthy fact before we begin: You may read in advance how the 
+JPEG2000 compression works. However, there is a disparity between 
+the basic encoding steps that are used for compressing the image 
+and the building blocks that actually appear in the file.
+
+When describing an encoding step we will use terms such
+as a tile, a tile-component, a subband, a precinct and a code block.
+When describing the layout of the image on disk we will use
+much simpler notions such as markers, marker segments, 
+tile-parts and packets.
+
+OK, so we are ready to begin!
+
+## The JPEG2000 file format vs the JPEG2000 codestream.
+
+## JP2 File format
+Simply put, describes a standard way to represent encoded images
+in the file system. The specification is a little bit more complex, and it describes a
+set of conforming and extensible file formats, to support a variety of applications.
+The designers of the file format have envisaged a family of *multimedia* files.
+The simplest type is just a container format for a single image. More complex types
+involve a series of images, stacked on top of each other, or sequenced in time.
+The file formats also describe a standard way to add metadata to any image. 
+
+### Layout of a JPEG2000 file:
+
+![JPEG2000 file and boxes](/docs/JPEG2000_File_Format.png)
+
+A JP2 box is the top-level building block of the file format. It contains
+a type and length fields in the header, and a a data section. 
+The most notable type of box is the contiguous codestream box. 
+This box stores in its data section the JPEG2000 codestream.
+
+## The JPEG2000 codestream
+
+![JPEG2000 Codestream](/docs/JPEG2000_Codestream.png)
+
+The codestream is the sequence of bytes that are needed to fully decode
+a single image that was encoded using the JPEG2000 compression algorithm.
+A file that contains nothing else but this sequence of bytes is called a raw
+codestream file.
+
+You can say that a JPEG2000 codestream is the product of applying 
+the compression algorithm over an image, however it is not the only way.
+
+Let's try to build conceptually a codestream from the bottom up:
+The encoded image is just a collection of coded data units called packets. 
+The packets are ordered according to some nested sorting order, and maintained 
+in the codestream inside packet groups that are referred to as tile parts.
+As you can guess, tile-parts and tiles are related.
+Before encoding an image, the encoder may divide the source image
+into a rectangular grid of tiles, each of the same size.
+
+## What are tile-parts exactly?
+
+Each source tile is then encoded separately and independently of the rest.
+The product of each encoded tile is an **ordered** sequence of data units
+called packets. This sequence may be broken up by an encoder into sub-sequences.
+Each sub-suqeunce is a tile-part, or an ordered group of contiguous packets that 
+have been originated at some tile in the image.
+
+## Marker Segments.
+
+![Markers and Marker Segments](/docs/JPEG2000_Codestream_Headers_and_Marker_Segments.png)
+
+To describe the image and the needed parameters for decoding,
+special segments are placed at the beginning of the codestream and 
+tile-part. These segments are referred to as marker segments,
+and they start with a special two byte code called a marker.
+The marker denotes the data that the segment describes.
+
+* SIZ segemnt describes the size of the image, the size of its tiles, the number of
+color components and their bit depth (original sample precision) and sub-sampling.
+* COD segment describes coding options and parameters such as:
+  * The use of a reversible or irreversible wavelet filter for decomposition.
+  * The number of wavelet decompositions (hence the number of resolutions),
+  * The number of quality increments. 
+  * Tiling in the compressed domain (precincts)
+  * The use of a component transformation from the RGB color-space 
+  to a YCbCr (YUV) space,
+  * and more.
+
+* QCD segment describes the parameters used in quantization. 
+
+There are of course many more different marker segments, but the 
+three marker segments mentioned above are mandatory and must appear in 
+the codestream header.
+
+To summarize from a top down view, a valid codestream is a sequence 
+of marker segments that describe the image followed by tile-parts. 
+A tile-part is a sequence of marker segments that describe the packets within
+followed by the sequence of packets. Each packet is a unit of coded data.
+Packets would be explained in a later section.
+
+## Indexes 
+To enable efficient access to any tile-part in the codestream or to any packet in 
+a tile-part, optional, yet very much recommended marker segments are employed. 
+These are called pointer marker segments. The pointer segments contain a list of 
+lengths for each tile-part or for each packet.
+
+![Tilepart index](/docs/JPEG2000_Tilepart_Index.png)
+
+The index over the tile-parts is written in a marker segment called TLM
+(Tile-part Main header) which is located at the codestream header.
+Every entry in this index has a fixed length, and usually encoders must
+reserve space for this index before starting to generate the tile-parts.
+In the common case, it is possible to make an exact estimate of how many 
+tile-parts will be generated, especially when the splitting of the 
+packet sequence is done at pre-defined cut off points.
+In this enough space is reserved at the codestream header for all of the tile-parts.
+The length field of each entry is updated after the tile-part has been generated.
+
+![Packet index](/docs/JPEG2000_Packet_Index.png)
+
+The index over the tile-parts' packets is written in a marker segment called PLT 
+(Packet Length Tile-part header) which is located at the tile-part header.
+The entries in this index have **variable** length.
+There can be potentially millions of packets in a sizable image, and
+they vary in length. To conserve space, a variable length entry is required.
+However this means that the encoder **cannot** reserve space upfront 
+for this index, and it has to buffer in memory all of the packets in the 
+tile-part in order to write the index properly, before the packets.
+
+## Why would anyone break up the packet sequence into tile-parts?
+
+Why would anyone want to break up the packet sequence you ask?
+In some scenarios the encoder has constrained memory, and it wants
+to generate the portion of ready packets it maintains in memory to the 
+storage device, and relieve memory consumption.
+Other scenarios are more intricate and are used to change the progression
+order of the entire codestream. 
+Splitting the packet sequence in accordance with the sorting order at specific
+cut off points, can result in groups of packets that are grouped by 
+a resolution level, or a quality layer, or a colour component.
+Later on, these groups of packets from different tiles may be interleaved.
+The packet order across the same tile will remain the same, but the packet 
+sequence will no longer be contiguous.
+
