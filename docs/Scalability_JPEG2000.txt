@@ -1,0 +1,125 @@
+s/**   Copyright 2014 Paul Roit
+*
+*   Licensed under the Apache License, Version 2.0 (the "License");
+*   you may not use this file except in compliance with the License.
+*   You may obtain a copy of the License at
+*
+*       http://www.apache.org/licenses/LICENSE-2.0
+*
+*   Unless required by applicable law or agreed to in writing, software
+*   distributed under the License is distributed on an "AS IS" BASIS,
+*   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+*   See the License for the specific language governing permissions and
+*   limitations under the License.
+*/
+
+# Different types of progressiveness and scalability in JPEG2000
+
+The goal of this article is to explain the differences in the four types 
+of progressiveness in a JPEG2000 image. The types are:
+Spatial location, Color component, Quality layer and Resolution level.
+These types are directly related to the compression steps and the way
+coded data is packed into packets.
+I will not cover here spatial and color progressions, spatial
+progression will be discussed under random spatial access, and color progression
+is not very sophisticated once you understand how JPEG2000 treats color channels.
+
+So lets dive deeper into resolution and quality scalability.
+
+## What is a resolution level?
+
+![Resolution Level](https://github.com/plroit/Skyreach/blob/master/docs/Resolution_Level.png)
+
+Consider a source image of a given size WxH pixels. Sometimes we need to fit 
+the image, or a part of the image, inside a viewport (a container window) that 
+is smaller in terms of pixel area, than the desired part of the image.
+What do we do? We zoom-out. In other terms, we scale-down the image, or
+down-sample it, in such a way that it occupies less space at the expense of the
+level of detail that becomes coarser. 
+
+There are many methods to down-sample an image, and the best method to use
+really depends on the visual content of the image and the visual system that 
+will consume this image, may it be human or machine.
+All of the methods try to approximate an ideal operation in the frequency domain:
+Try to attenuate to zero all frequencies above a certain threshold, and 
+reconstruct the image using the leftover low frequencies.
+
+## Scale factor
+Scale, or zoom factor, is just a scaling factor that the source image was scaled with.
+The resolution of the resulting image is W*scale x H*scale pixels. 
+Scale is a strictly positive real number. 
+A scale factor of 1.0 means no scaling at all, while scaling by a factor greater 
+than 1.0 means up-sampling and by a factor less than 1.0 is down-sampling.
+
+## Image Pyramid
+
+![Image Pyramid](https://github.com/plroit/Skyreach/blob/master/docs/Image_Pyramid.png)
+
+Lets pick a series of scaling factors that form a geometric series, 
+for example: 1/2, 1/4, 1/8, 1/16, 1/32.. and create a set of scaled down images
+originating at the source image. Each image will be a quarter of the size of
+the previous image. This is an image pyramid!
+
+An image pyramid is useful as a pre-processing technique. Once viewing a 
+scaled-down version of the image becomes too computationally intensive, 
+or happens often enough, it is wise to trade the computational cost with 
+a memory cost. 
+If a user frequents a scaled-down image often, it is wiser to store the 
+scaled-down image for the next access attempt instead of recomputing it. 
+All the more wiser when the image is of very high resolution to begin with,
+and creating a scaled version takes a considerable amount of computational
+resources at the first access attempt.
+
+## Image pyramid in JPEG2000
+
+![JPEG2000 Image Pyramid](https://github.com/plroit/Skyreach/blob/master/docs/JPEG2000_Image_Pyramid.png)
+
+The JPEG2000 compression scheme uses a technique called wavelet decomposition
+to create a representation of an image pyramid. Wavelet decomposition is a 
+broad subject for academic research, and JPEG2000 is not the first compression
+algorithm to employ it. The decomposition by itself does not compress data,
+but it is used to de-correlate high frequency signals in the image from the low,
+for a more efficient compression by other steps in the encoder.
+
+The decomposition is a recursive process. At each step, an input image 
+is divided into four images, each a quarter of the size of the input.
+Each of the four images is called a subband. One subband that is labeled 'LL' 
+is actually a scaled-down version of the input, with a scaling factor 
+of a 1/2. The recursion continues with the 'LL' subband now being the input for
+the next decomposition step. At each successive level r, the resulting 
+subbands, and the latest 'LL' band among them, are of scale 1/(2^r) of the 
+original image. The number of decomposition steps is defined by 
+the encoder.
+
+Take for example an image that was decomposed using R recursive
+steps. The image content is transformed to R*3 residual subbands
+and the remaining LL subband. That subband represents the smallest scaled-down
+version of the image, or a 1/(2^R) of the original image. During
+the recursive decomposition the encoder encountered R different, scaled-down
+versions of the original image, each of size 1/(2^r) where r is in the 
+inclusive range: [1, R]. 
+
+Because of the nature of the decomposition, the subbands are not
+a straight forward image pyramid. To reconstruct a scaled-down version of the 
+image at scale factor 1/(2^r), one needs to decode all of the subbands starting 
+from the final 'LL' and up through the required level, then apply an inverse 
+wavelet decomposition, reconstructing every upper 'LL' subband from the four 
+lower subbands, until the required resolution level is reached. This may seem 
+computationally complex and counter the benefits of an image pyramid. One 
+should however note that access to the lower resolution levels in the pyramid 
+is very efficient and that the computational cost rises with the number of required
+pixels in the target resolution level. It should also be noted that in any event,
+data from resolutions higher than the target level is unnecessary to the 
+reconstruction of the image at the required level.
+
+## Progressiveness via resolution level
+
+After this long introduction it is now fairly easy to describe what is a 
+resolution progressiveness: The more bits a decoder reads from the coded image,
+the higher the resolution level it can extract. The first bits will contain the
+final 'LL' subband. Successive bits will contain more and more subbands, thus 
+leading to finer details being revealed at successive resolution levels.
+
+
+
+
