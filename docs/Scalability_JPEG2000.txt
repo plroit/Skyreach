@@ -1,4 +1,4 @@
-s/**   Copyright 2014 Paul Roit
+/**   Copyright 2014 Paul Roit
 *
 *   Licensed under the Apache License, Version 2.0 (the "License");
 *   you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ reconstruct the image using the leftover low frequencies.
 
 ## Scale factor
 Scale, or zoom factor, is just a scaling factor that the source image was scaled with.
-The resolution of the resulting image is W*scale x H*scale pixels. 
+The resolution of the resulting image is W\*scale x H\*scale pixels. 
 Scale is a strictly positive real number. 
 A scale factor of 1.0 means no scaling at all, while scaling by a factor greater 
 than 1.0 means up-sampling and by a factor less than 1.0 is down-sampling.
@@ -72,7 +72,7 @@ resources at the first access attempt.
 
 ## Image pyramid in JPEG2000
 
-![JPEG2000 Image Pyramid](https://github.com/plroit/Skyreach/blob/master/docs/JPEG2000_Image_Pyramid.png)
+![JPEG2000 Wavelet Decomposition](https://github.com/plroit/Skyreach/blob/master/docs/JPEG2000_Wavelet_Decomposition.png)
 
 The JPEG2000 compression scheme uses a technique called wavelet decomposition
 to create a representation of an image pyramid. Wavelet decomposition is a 
@@ -119,6 +119,55 @@ resolution progressiveness: The more bits a decoder reads from the coded image,
 the higher the resolution level it can extract. The first bits will contain the
 final 'LL' subband. Successive bits will contain more and more subbands, thus 
 leading to finer details being revealed at successive resolution levels.
+
+## Scalability via low resolution up-sampling
+
+The following images are taken from the Dresden Image Database
+https://forensics.inf.tu-dresden.de/ddimgdb
+
+Lets take a look at the original image, lossless compressed:
+![Fine branches](https://github.com/plroit/Skyreach/blob/master/docs/Nikon_cropped.png)
+Did you notice the fine tips of the tree branches?
+
+Sophisticated image viewing applications today provide efficient and scalable
+methods to view images. These applications try to minimize the time and resources
+it takes to provide a meaningful image to the end-user, even under constraining
+conditions. Even if the image data did not finish loading, an image viewer
+will try to use the available data to make a partial reconstruction of the image,
+and display that to the user. 
+
+![Up-sampled](https://github.com/plroit/Skyreach/blob/master/docs/upsampled_image_from_R3.png)
+Can you notice the branches now? 
+
+For low bandwidth clients, a partial reconstruction enhances user experience,
+and gives a feel of fluency till the entire image is loaded. A common technique 
+is to deliver first a low resolution subset of the image, and then to up-sample
+it. Simply put, use the pixels that cover a low resolution area to create an
+image of higher resolution that resemble good enough the actual high resolution 
+data.It is easier to load a low resolution subset of the image since it takes
+less pixels and therefore less bits.
+the user gets a partial response faster and the application continues to deliver
+the required high resolution content and refine the produced image, fluently.
+This technique is very common, and is very practical with image systems that use 
+resolution pyramids either as external images or internal within the compressed
+content of the original image, as in JPEG2000 image format.
+
+# Up-sampling is not magic
+
+It is important to note that up-sampling is not magic. Up-sampling an image 
+will not produce fine details that were only visible in the high frequency 
+components of the image. It can only be a replacement for a short period of 
+time, till the user will get the true information. 
+
+To achieve a more fluent transition between the up-sampled image and the true
+high resolution image, we need to choose an up-sampling method that best suits
+to the human visual system and the content of the image. As in down-sampling, 
+there is a multitude of methods to choose from. There is an extensive overview 
+of different methods at: http://www.imagemagick.org/Usage/filter and the bottom
+line of the review is to use a Mitchell filter for up-sampling: 
+http://www.imagemagick.org/Usage/filter/#best_filter
+
+  
 
 
 

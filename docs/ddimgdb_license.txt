@@ -1,0 +1,20 @@
+The 'Dresden Image Database' website provides an interface to two different sources of images:
+
+- the 'Dresden Image Database', which includes the original set of images as taken by the maintainer of the website and his colleagues, and
+- an additional collection of flickr(r) images, taken by camera models that have also been used to compile the 'Dresden Image Database'.
+
+The flickr images have been collected in an automated process using the official web api ( http://www.flickr.com/services/api/ ) and are provided as lists of links. These links have not been checked manually by the maintainer of this website and, the maintainer is not responsible for the content of the respective images. The images are hosted at flickr. Please respect the intellectual property and check http://www.flickr.com/ for further information.
+
+If you download and use the images of the 'Dresden Image Database' you agree to the following license agreement. We are pleased to receive electronic copies of any publication making use of our database and to add your reference to the list of related publications.
+
+License
+
+Copyright (c) 2009-2011 Thomas Gloe
+
+All data provided in the 'Dresden Image Database' are made freely available for scientific, non-commercial purposes such as academic research, teaching, or personal experimentation. Permission is granted to use and copy the provided data given that you agree to the following coniditions:
+
+1. The provided data comes "AS IS", without express or implied warranty.
+2. A reference to our paper "Gloe, T., & Böhme, R. (2010). The ‘Dresden Image Database’ for benchmarking digital image forensics. In Proceedings of the 25th Symposium on Applied Computing (ACM SAC 2010) (Vol. 2, pp. 1585–1591)." is included in any published work using the provided data either as a whole or in parts.
+3. You may not use or distribute the data or any derivative work for commercial purposes as, for example, licensing or selling the data, or using the data with a purpose to procure a commercial gain without written permission.
+4. All copies or derivatives of the provided data must retain the above copyright notice, the license including all conditions and a link to the original website https://forensics.inf.tu-dresden.de/ddimgdb . 
+5. All rights not expressly granted to you are reserved by the authors.
