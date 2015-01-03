@@ -152,7 +152,7 @@ This technique is very common, and is very practical with image systems that use
 resolution pyramids either as external images or internal within the compressed
 content of the original image, as in JPEG2000 image format.
 
-# Up-sampling is not magic
+## Up-sampling is not magic
 
 It is important to note that up-sampling is not magic. Up-sampling an image 
 will not produce fine details that were only visible in the high frequency 
@@ -167,6 +167,121 @@ of different methods at: http://www.imagemagick.org/Usage/filter and the bottom
 line of the review is to use a Mitchell filter for up-sampling: 
 http://www.imagemagick.org/Usage/filter/#best_filter
 
+## Quality scalability in JPEG2000
+
+JPEG2000 compressed images can be set to have multiple quality increments of 
+the image. These quality increments are spread over any resolution level and 
+spatial location. A partial quality is obtained by  setting truncation points
+during encoding. The truncation points are set inside the coded data at every 
+resolution, color component and spatial location. The number of truncation 
+points is the number of available quality increments, it can be very large, and 
+is not limited by, or related to, to the number of resolution levels.
+Decoding a partial quality image is done simply by reconstructing an image from
+data that is read up to a truncation point. 
+
+A partial quality image is **not** obtained by up-sampling a low resolution 
+image. A partial quality image will have data taken from all resolution levels.
+Any resolution level can be reconstructed with partial quality. 
+
+To understand the differences between resolution up-sampling and quality layers
+I have put together a series of 4 up-sampled images from different resolutions,
+and a series of images with different bit-rates. Each resolution level in 
+the first series occupies 4 times less area than the previous image. The levels
+are obtained by decoding the original JPEG2000 image.
+
+Each quality layer image has 4 times less bytes than the previous one. This 
+setting is chosen in advance, and an encoder can choose almost any arbitrary 
+value. The number of possible quality layers can be 1 to 2^16, though for 
+practical reasons encoders limit this range to 1 to several dozens.
+The original image has been compressed visually lossless by JPEG2000 encoder.
+Quality layers are formed when the image is encoded. The layers in the following
+image are specifically set to have their bit-rates a geometric series with a 
+factor of 0.25. 
+
+bpp = bits per pixel, or bit-rate measurement.
+
+Please note that it is **not** a well defined comparison, but it gives a good 
+hunch.
+
+![R4 vs L1](https://github.com/plroit/Skyreach/blob/master/docs/upsampling_vs_quality_R4_vs_L1.png)
+
+![R4 vs L1](https://github.com/plroit/Skyreach/blob/master/docs/upsampling_vs_quality_R4_vs_L1.png)
+
+![R4 vs L1](https://github.com/plroit/Skyreach/blob/master/docs/upsampling_vs_quality_R4_vs_L1.png)
+
+![R4 vs L1](https://github.com/plroit/Skyreach/blob/master/docs/upsampling_vs_quality_R4_vs_L1.png)
+
+Lets compare the byte sizes of the images according to their reduction factor.
+The size of the resolution level in JPEG2000 is obtained by using a transcoding 
+application that can write a new jp2 image out of an existing one by discarding 
+packets that belong to higher resolution levels.
+
+|	Reduction Factor	|	Bit-rate by resolution	| Bit-rate by quality	|
+|:---------------------:|:-------------------------:|:---------------------:|
+|0 - original			|4.8						|4.8					|
+|4						|10.6						|1.19					|
+|16						|18.2						|0.29					|
+|64						|25.0						|0.078					|
+|256					|31.4						|0.018					|
+
+You can actually witness an odd anomaly here of JPEG2000, a lower resolution
+takes more bits to compress per pixel. This is odd.
+It does not mean that smaller images are harder to compress. It means that more
+bits are used per pixel in the lower resolution levels than in the higher.
+
+Can I fully explain this phenomenon? Not at this time. 
+However I will try to reconstruct a low resolution level using only a subset of
+quality layers. Then I will compare the PSNR difference of the image to the above
+low resolution reference image. 
+I will use the  transcoding application again, this time obtaining a new jp2 
+image from an existing one by discarding packets that belong to a high 
+resolution and high quality layers.
+At each reduction factor I will obtain a new image from reduced resolution
+(reduction by pixel area) and reduced quality layer (reduction by bit-rate).
+Please note that the quality layer bit-rates were set globally for the entire 
+image, and the quality layers at each resolution may have a different 
+distribution than the global bit-rates.
+
+PSNR - a measure of similarity between images - higher is better
+http://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio
+
+
+|Reduction Factor|bpp of reduced resolution|bpp of reduced resolution and quality| PSNR|
+|:-------------:|:-------------------------:|:----------------------------------:|:---:|
+|4				|10.6						|4.42								|43.0
+|16				|18.2 						|3.61								|35.3
+|64				|25.0						|3.05								|30.0
+|256			|31.4						|3.12								|24.7
+
+Can you spot the difference?
+
+![Resolution vs Quality-Resolution Reduction](https://github.com/plroit/Skyreach/blob/master/docs/JPEG2000_Quality_Resolution_VS_Resolution_Reduction.png)
+___
+##### 60 seconds about quality layer formation - skip if too misleading.
+
+Please note that the above explanation is a little superficial. For more in-depth
+understanding consult further articles about the encoding process.
+See EBCOT algorithm - Embedded Block Coding with Optimal Truncation.
+A codeblock is a small rectangle of samples in every subband and tile-component.
+Once all are encoded, a rate allocator calculates the best truncation points 
+for every codeblock according to some metric. The job of the rate allocator is
+to divide the codeblock data to different buckets. Each bucket contains an 
+increase in visual quality from the previous bucket. The number of buckets is 
+defined globally by the encoder.
+** Basically, a bucket is a layer of image quality.** 
+
+Some codeblocks will contribute data to all buckets. Some will contribute only 
+to the first buckets. A good rate allocator will try to optimize the division
+such that each bucket will have a descending order of ratios between
+the visual quality metric to the cost - which is the number
+of bytes added by the bucket. The descending order means that buckets are 
+ordered by their cost-effectiveness. 
+A rate-allocator can set a final target amount of bytes for each bucket, 
+or it can set a target PSNR (peak signal to noise ratio) value for each bucket.
+Other targets for each bucket are possible.
+
+##### End of 60 seconds
+___
   
 
 
