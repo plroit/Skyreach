@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{279678BF-026C-4461-8E83-A10DB8DDCF8E}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Skyreach</RootNamespace>
+    <AssemblyName>Skyreach</AssemblyName>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>..\Out\</OutputPath>
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <DocumentationFile>
+    </DocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>..\Out\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Jp2\FileFormat\BoxTypes.cs" />
+    <Compile Include="Jp2\Codestream\CodestreamElement.cs" />
+    <Compile Include="Jp2\Codestream\CodestreamNode.cs" />
+    <Compile Include="Jp2\Codestream\JP2Codestream.cs" />
+    <Compile Include="Jp2\FileFormat\Box\ColorspaceSpecificationBox.cs" />
+    <Compile Include="Jp2\FileFormat\Box\FileTypeBox.cs" />
+    <Compile Include="Jp2\FileFormat\Box\ImageHeaderBox.cs" />
+    <Compile Include="Jp2\FileFormat\Box\Jp2Box.cs" />
+    <Compile Include="Jp2\FileFormat\Box\Jp2SignatureBox.cs" />
+    <Compile Include="Jp2\FileFormat\ColorSpace.cs" />
+    <Compile Include="Jp2\FileFormat\Box\ContiguousCodestreamBox.cs" />
+    <Compile Include="Jp2\FileFormat\JP2File.cs" />
+    <Compile Include="Jp2\Codestream\JP2Packet.cs" />
+    <Compile Include="Jp2\Codestream\JP2Tile.cs" />
+    <Compile Include="Jp2\Codestream\JP2TilePart.cs" />
+    <Compile Include="Jp2\Codestream\Markers\CodMarker.cs" />
+    <Compile Include="Jp2\Codestream\Markers\MarkerType.cs" />
+    <Compile Include="Jp2\Codestream\Markers\MarkerSegment.cs" />
+    <Compile Include="Jp2\Codestream\Markers\PltMarker.cs" />
+    <Compile Include="Jp2\Codestream\Markers\SizMarker.cs" />
+    <Compile Include="Jp2\Codestream\Markers\SotMarker.cs" />
+    <Compile Include="Jp2\Codestream\Markers\TlmMarker.cs" />
+    <Compile Include="Jp2\Codestream\ProgressionOrder.cs" />
+    <Compile Include="Jp2\Codestream\Markers\QcdMarker.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Query\PacketInterval.cs" />
+    <Compile Include="Query\QueryPlanner.cs" />
+    <Compile Include="Query\RPCLQueryPlanner.cs" />
+    <Compile Include="Util\BigEndBinaryReader.cs" />
+    <Compile Include="Util\BigEndBinaryWriter.cs" />
+    <Compile Include="Util\BitHacks.cs" />
+    <Compile Include="Util\SegmentScanner.cs" />
+    <Compile Include="Util\VarByte.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="docs\skyreach.txt" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>
