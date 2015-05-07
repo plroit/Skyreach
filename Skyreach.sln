@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.31101.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Skyreach", "Skyreach\Skyreach.csproj", "{279678BF-026C-4461-8E83-A10DB8DDCF8E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "jp2merge", "jp2merge\jp2merge.csproj", "{3103B6D8-261A-4057-B123-F658B779267B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{24CAA92D-69B7-43C5-8C84-17A44050FAE6}"
+	ProjectSection(SolutionItems) = preProject
+		docs\all the rush.txt = docs\all the rush.txt
+		docs\how large is large.txt = docs\how large is large.txt
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{279678BF-026C-4461-8E83-A10DB8DDCF8E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{279678BF-026C-4461-8E83-A10DB8DDCF8E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{279678BF-026C-4461-8E83-A10DB8DDCF8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{279678BF-026C-4461-8E83-A10DB8DDCF8E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3103B6D8-261A-4057-B123-F658B779267B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3103B6D8-261A-4057-B123-F658B779267B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3103B6D8-261A-4057-B123-F658B779267B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3103B6D8-261A-4057-B123-F658B779267B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
