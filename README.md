@@ -1,6 +1,9 @@
 # Skyreach
 Library for JPEG2000 structural traversal and compressed domain manipulation
 
+To fully appreciate the scalability benefits of using JPEG2000 compression, please see:  
+[Understanding scalability in JPEG2000](https://github.com/plroit/Skyreach/wiki/Understanding-scalability-in-JPEG2000)
+
 ## INTRODUCTION
 
 Skyreach is a library that is designated for structural traversal of 
@@ -13,7 +16,7 @@ of a high resolution source, by simple means of copying the relevant data out of
 the source image to a new one.
 
 In order to use Skyreach effectively one must know the structure and layout of
-a JP2 image. Fortunately, these topics are covered in a set of attached wiki articles.
+a JP2 image. Fortunately, these topics are covered in an attached wiki article [Introduction to JPEG2000 Structure and Layout] (https://github.com/plroit/Skyreach/wiki/Introduction-to-JPEG2000-Structure-and-Layout)
 
 Skyreach includes a query functionality that enables quering an existing
 image, for example, to query for a reduced resolution subset, or 
