@@ -17,7 +17,7 @@ namespace Skyreach.Jp2.FileFormat
     /// Must start with the JPEG2000 signature box
     /// and must contain a JPEG2000 codestream box
     /// </summary>
-    public class Jp2File : IDisposable
+    public class Jp2File
     {
         /// <summary>
         /// True iff the file is a raw codestream.
@@ -35,15 +35,15 @@ namespace Skyreach.Jp2.FileFormat
         /// The contiguous sequence of boxes that represent this 
         /// JPEG2000 file.
         /// </summary>
-        protected List<Jp2Box> _boxes;
+        protected IEnumerable<Jp2Box> _boxes;
 
         /// <summary>
         /// The JPEG2000 codestream. The actual data that 
         /// represents an image encoded with the JPEG2000 compression
         /// </summary>
-        public JP2Codestream Codestream { get; protected set; }
+        private JP2Codestream Codestream { get; set; }
 
-        public long GetCodestreamOffset()
+        internal long GetCodestreamOffset()
         {
             long offset = 0;
             // find codestream box, add lengths till you find it
@@ -70,11 +70,31 @@ namespace Skyreach.Jp2.FileFormat
         /// </summary>
         /// <param name="stream"></param>
         /// <param name="isRaw"></param>
-        protected Jp2File(Stream stream, bool isRaw)
+        protected Jp2File(Stream stream, IEnumerable<Jp2Box> boxes)
         {
             _stream = stream;
-            _isRaw = isRaw;
-            _boxes = new List<Jp2Box>();
+            _boxes = boxes;
+            _isRaw = false;
+            var csBoxes = 
+                boxes.Where(box => box.Type == BoxTypes.CodestreamBox);
+
+            if(!csBoxes.Any())
+            {
+                throw new InvalidOperationException(
+                    "Must create JP2File from a codestream box");
+            }
+            var csBox = csBoxes.First() as ContiguousCodestreamBox;
+            long csOffset = GetCodestreamOffset();
+            csBox.Codestream.Bind(_stream, csOffset);
+            Codestream = csBox.Codestream;
+        }
+
+        protected Jp2File(Stream stream)
+        {
+            _stream = stream;
+            ushort maybeMarker = stream.ReadUInt16();
+            _isRaw = maybeMarker == (ushort)MarkerType.SOC;
+            stream.Seek(-2, SeekOrigin.Current); // reset
         }
 
         /// <summary>
@@ -85,10 +105,7 @@ namespace Skyreach.Jp2.FileFormat
         public static Jp2File Open(Stream stream)
         {
             ThrowIfInvalidJPEG2000(stream);     
-            ushort maybeMarker = stream.ReadUInt16();
-            bool isRaw = maybeMarker == (ushort) MarkerType.SOC;
-            stream.Seek(-2, SeekOrigin.Current); // reset
-            return (new Jp2File(stream, isRaw)).Open();
+            return (new Jp2File(stream)).Open();
         }
 
         /// <summary>
@@ -133,26 +150,32 @@ namespace Skyreach.Jp2.FileFormat
         /// <param name="stream"></param>
         /// <returns></returns>
         public static Jp2File Create(
-            SizMarker siz, 
-            CodMarker cod, 
-            QcdMarker qcd,
+            IEnumerable<MarkerSegment> markers,
             int reservedTileparts,
             bool hasPropertyRights,
             Stream stream)
         {
-            JP2Codestream codestream = new JP2Codestream(
-                new List<MarkerSegment> { siz, cod, qcd}, reservedTileparts);
+
+            var sizs = markers.Where(mrk => mrk.Type == MarkerType.SIZ);
+            var cods = markers.Where(mrk => mrk.Type == MarkerType.SIZ);
+            var qcds = markers.Where(mrk => mrk.Type == MarkerType.QCD);
+            if(!sizs.Any() || !cods.Any() || !qcds.Any())
+            {
+                throw new ArgumentException(
+                    "Must supply SIZ, COD and QCD markers");
+            }
+            SizMarker siz = sizs.First() as SizMarker;
+            CodMarker cod = cods.First() as CodMarker;
+            QcdMarker qcd = qcds.First() as QcdMarker;
 
             ColorSpace colorspace = GetColorspace(siz);
-            Jp2File jp2File = new Jp2File(stream, false);
             Jp2Box signBox = new Jp2SignatureBox();
             Jp2Box ftypBox = new FileTypeBox();
             Jp2Box jp2hBox = new Jp2Box((uint)BoxTypes.JP2HeaderBox);
             ImageHeaderBox ihdrBox = new ImageHeaderBox(siz, hasPropertyRights);
             Jp2Box colrBox = new ColorspaceSpecificationBox(colorspace);
+            var codestream = new JP2Codestream(markers, reservedTileparts);
             var csBox = new ContiguousCodestreamBox(codestream);
-            jp2File.Codestream = codestream;
-
             if(ihdrBox.BitsPerComponent == ImageHeaderBox.USE_BPC_BOX)
             {
                 throw new NotSupportedException(
@@ -160,19 +183,9 @@ namespace Skyreach.Jp2.FileFormat
             }
 
             jp2hBox.Add(new List<Jp2Box> { ihdrBox, colrBox });
-            jp2File.Add(new List<Jp2Box> { signBox, ftypBox, jp2hBox, csBox});
-
+            Jp2File jp2File = new Jp2File(stream, new List<Jp2Box> { 
+                signBox, ftypBox, jp2hBox, csBox});
             return jp2File;
-        }
-
-        /// <summary>
-        /// Adds the specified boxes to the general list of boxes,
-        /// in the oder of their enumeration
-        /// </summary>
-        /// <param name="boxes"></param>
-        public void Add(IEnumerable<Jp2Box> boxes)
-        {
-            _boxes.AddRange(boxes);
         }
 
         /// <summary>
@@ -211,23 +224,23 @@ namespace Skyreach.Jp2.FileFormat
             ushort val = stream.ReadUInt16();
             bool isCodestream = val == (ushort)MarkerType.SOC;
             stream.Seek(-2, SeekOrigin.Current); // reset
-            
-            bool isJp2 = true;
-            if (!isCodestream)
+            bool isValid = isCodestream;
+            if (!isValid)
             {
+                bool isJp2 = true;
                 uint[] header = new uint[3];
                 int hIdx = 0;
                 header[hIdx++] = stream.ReadUInt32();
                 header[hIdx++] = stream.ReadUInt32();
                 header[hIdx++] = stream.ReadUInt32();
 
-                isJp2 &= header[0] == 0x000C; // sign box length
-                isJp2 &= header[1] == (uint)BoxTypes.Jp2SignatureBox;
-                isJp2 &= header[2] == 0x0D0A870A; // <CR><LF><0x87><LF>
+                isJp2 = isJp2 && header[0] == 0x000C; // sign box length
+                isJp2 = isJp2 && header[1] == (uint)BoxTypes.Jp2SignatureBox;
+                isJp2 = isJp2 && header[2] == 0x0D0A870A; // <CR><LF><0x87><LF>
                 stream.Seek(-12, SeekOrigin.Current); // reset
+                isValid = isJp2;
             }
             // must be either a raw codestream or a jpeg2000 file format
-            bool isValid = isJp2 ^ isCodestream;
             if (!isValid)
             {
                 throw new ArgumentException(
@@ -240,8 +253,9 @@ namespace Skyreach.Jp2.FileFormat
         /// to the underlying stream. The headers of the JPEG2000 codestream
         /// are not written.
         /// </summary>
-        public void FlushHeaders()
+        public void Flush()
         {
+            _stream.Seek(0, SeekOrigin.Begin);
             foreach(var box in _boxes)
             {
                 if(box.Type != BoxTypes.CodestreamBox)
@@ -257,14 +271,7 @@ namespace Skyreach.Jp2.FileFormat
                 }
             }
 
-            long csOffset = GetCodestreamOffset();
-            Codestream.Bind(_stream, csOffset);
-            Codestream.FlushHeaders();
-        }
-
-        public void Dispose()
-        {
-            Codestream.Close();
+            Codestream.Flush();
         }
     }
 }

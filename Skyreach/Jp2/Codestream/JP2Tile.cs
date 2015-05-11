@@ -33,7 +33,7 @@ namespace Skyreach.Jp2.Codestream
             TileIndex = tileIdx;
         }
 
-        internal void Add(JP2TilePart tilePart)
+        internal void Add(JP2TilePart tilePart, bool isLast)
         {
             if(_isSealed)
             {
@@ -46,6 +46,10 @@ namespace Skyreach.Jp2.Codestream
                     "Tile-parts limit per tile has been reached");
             }
 
+            if(isLast)
+            {
+                tilePart.TilePartCount = (byte)(_tileParts.Count + 1);
+            }
             _tileParts.Add(tilePart);
             _packetCounts.Add(PACKET_COUNT_NOT_SET);
         }

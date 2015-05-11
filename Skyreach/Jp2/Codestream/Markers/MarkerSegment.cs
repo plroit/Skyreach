@@ -18,7 +18,13 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// </summary>
         public const int MAX_BODY_BYTES = UInt16.MaxValue - 2;
 
-        public MarkerType Type { get; protected set; }
+        /// <summary>
+        /// Dirty flag that ensures marker segment's regeneration
+        /// when necessary
+        /// </summary>
+        protected bool _isDirty;
+
+        public MarkerType Type { get; private set; }
         
         /// <summary>
         /// The length field as signaled in the codestream.
@@ -43,6 +49,21 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// </summary>
         public int Length { get { return _markerLength; } }
 
+        /// <summary>
+        /// Reads and parses a single 
+        /// MarkerSegment from the IO stream.
+        /// Stream is advanced to the first byte after the
+        /// marker segment.
+        /// </summary>
+        /// <param name="stream">
+        /// The IO stream from which to read  the marker segment
+        /// Must be positioned at the start of a potential marker.
+        /// </param>
+        /// <returns>
+        /// A parsed marker segment. The marker type can be
+        /// queried in order to make a cast to the correct
+        /// MarkerSegment derived type.
+        /// </returns>
         public static MarkerSegment Open(Stream stream)
         {
             MarkerType markerType = ReadMarkerType(stream);
@@ -69,6 +90,7 @@ namespace Skyreach.Jp2.Codestream.Markers
                 case MarkerType.SOT: return new SotMarker(markerLength, markerBody);
                 case MarkerType.TLM: return new TlmMarker(markerLength, markerBody);
                 case MarkerType.PLT: return new PltMarker(markerLength, markerBody);
+                case MarkerType.COM: return new ComMarker(markerLength, markerBody);
                 default: 
                     return new MarkerSegment(markerType, markerLength, markerBody);
             }
@@ -112,18 +134,7 @@ namespace Skyreach.Jp2.Codestream.Markers
             Type = type;
         }
 
-        public void ForceGeneration()
-        {
-            _markerBody = GenerateMarkerBody();
-            if (_markerBody.Length == 0)
-            {
-                throw new InvalidOperationException(
-                    "Could not generate marker segment: " + Type);
-            }
-            _markerLength = (ushort)(_markerBody.Length + 2);
-        }
-
-        protected internal virtual void Parse()
+        protected virtual void Parse()
         {
             return; // stub
         }
@@ -143,16 +154,32 @@ namespace Skyreach.Jp2.Codestream.Markers
             bool isValid = Enum.IsDefined(typeof(MarkerType), marker);
             if (!isValid)
             {
-                throw new ArgumentException("valid marker value expected, instead got: " + marker);
+                throw new ArgumentException(
+                    "valid marker value expected, instead got: " + marker);
             }
             return (MarkerType)marker;
         }
 
+        /// <summary>
+        /// Writes the marker segment to the underlying stream.
+        /// Writes teh marker type, the marker length, and the
+        /// rest of the marker segment body.
+        /// </summary>
+        /// <param name="stream"></param>
+        /// <returns>
+        /// Number of bytes that were written to the stream
+        /// </returns>
         public int WriteMarkerSegment(Stream stream)
         {            
-            if(_markerBody == null || _markerLength == 0)
+            if(_isDirty)
             {
-                ForceGeneration();
+                _markerBody = GenerateMarkerBody();
+                _markerLength = (ushort)(_markerBody.Length + 2);
+                if (_markerBody.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Could not generate marker segment: " + Type);
+                }
             }
 
             stream.WriteUInt16((ushort)Type);
@@ -161,7 +188,16 @@ namespace Skyreach.Jp2.Codestream.Markers
             return _markerLength + 2;
         }
 
-        public virtual byte[] GenerateMarkerBody()
+        /// <summary>
+        /// Derived implementation must return a byte[]
+        /// with the encoded marker segment representation.
+        /// The byte[] must contain the segment part of the
+        /// marker segment starting and including the 
+        /// marker length field. It shall not contain 
+        /// the two bytes of the representing the marker type
+        /// </summary>
+        /// <returns></returns>
+        protected virtual byte[] GenerateMarkerBody()
         {
             if(_markerBody == null)
             {

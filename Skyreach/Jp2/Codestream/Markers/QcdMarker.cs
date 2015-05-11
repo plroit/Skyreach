@@ -21,7 +21,7 @@ namespace Skyreach.Jp2.Codestream.Markers
 
         }
 
-        protected internal override void Parse()
+        protected override void Parse()
         {
             // TODO - parsing of QCD
             base.Parse();

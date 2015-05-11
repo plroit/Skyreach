@@ -30,13 +30,21 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// </summary>
         public byte TilePartIndex { get; private set; }
 
+        private uint _tilePartLength;
         /// <summary>
         /// Length, in bytes, from the beginning of the first byte of 
         /// this SOT marker segment of the tile-part to the end of the 
         /// data of that tile-part. 
         /// </summary>
-        public uint TilePartLength { get; protected internal set; }
+        public uint TilePartLength {
+            get { return _tilePartLength; }
+            internal set { 
+                _tilePartLength = value; 
+                _isDirty = true; 
+            }
+        }
 
+        private byte _tilePartCount;
         /// <summary>
         /// Number of tile-parts of a tile in the codestream. 
         /// Two values are allowed: the correct number of tile- parts 
@@ -44,10 +52,14 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// number of tile-parts of this tile is not specified in 
         /// this tile-part.  
         /// </summary>
-        public byte TilePartCount { get; protected internal set; }
-
+        public byte TilePartCount {
+            get { return _tilePartCount; }
+            internal set {
+                _tilePartCount = value;
+                _isDirty = true;
+            }
+        }
         
-
         protected internal SotMarker(ushort length, byte[] markerBody)
             : base(MarkerType.SOT, length, markerBody)
         {
@@ -59,9 +71,14 @@ namespace Skyreach.Jp2.Codestream.Markers
         {
             TileIndex = tileIndex;
             TilePartIndex = tilePartIndex;
+            // warning, may be premature to generate here
+            // more properties are needed
+            // such as tile-part length and tile-part count in tile.
+            _markerBody = GenerateMarkerBody();
+            _markerLength = (ushort)(_markerBody.Length + 2);
         }
 
-        protected internal override void Parse()
+        protected override void Parse()
         {
             if(_markerLength != SOT_MARKER_LENGTH)
             {
@@ -81,7 +98,7 @@ namespace Skyreach.Jp2.Codestream.Markers
 
         }
 
-        public override byte[] GenerateMarkerBody()
+        protected override byte[] GenerateMarkerBody()
         {
             MemoryStream mem = new MemoryStream();
             mem.WriteUInt16(TileIndex);

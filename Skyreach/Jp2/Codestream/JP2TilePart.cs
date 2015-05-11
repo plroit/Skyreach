@@ -7,16 +7,27 @@ using System.Linq;
 namespace Skyreach.Jp2.Codestream
 {
     /// <summary>
+    /// <para>
     /// A tile-part represents a key container in the JPEG2000 codestream. A
     /// tile-part must contain a consecutive stream of packets that belong to
     /// the same tile in the source image. The number of packets in each
     /// tile-part is dynamic. The packets of each tile-part are ordered by a
     /// progression order that is signaled in the COD marker of the codestream.
-    /// 
+    /// </para>
+    /// <para>
+    /// Tile-parts can be viewed as containers for the packet sequence
+    /// that is generated for a tile. Each container holds a portion
+    /// of the consecutive sequence, that has been cut off at 
+    /// specific packet boundaries.
+    /// </para>
+    /// <para>
     /// Tile-parts of the same tile may not be adjacent in the JPEG2000
-    /// codestream. They are however placed in the same order however the
-    /// tile-parts are placed in the packet order packets across tile-parts of
-    /// the same tile must adhere to the same progression order
+    /// codestream. However the packet order across multiple tile-parts
+    /// of the same tile must adhere to the same progression order as inside
+    /// the tile-part. Therefore, tileparts of different tiles can be 
+    /// interleaved in the codestream, but the consecutive order of the 
+    /// tile-parts of the same tile must remain the same.
+    /// </para>
     /// </summary>
     public class JP2TilePart : CodestreamNode
     {
@@ -45,11 +56,6 @@ namespace Skyreach.Jp2.Codestream
         /// </summary>
         public const uint MAX_DATA_TILEPART_BYTES =
             UInt32.MaxValue - EMPTY_TILEPART_LENGTH;
-
-        /// <summary>
-        /// true iff no more packets can be added to this tilepart
-        /// </summary>
-        private bool _isSealed;
 
         /// <summary>
         /// A list that contains packet offsets from the end of the end of the
@@ -89,7 +95,7 @@ namespace Skyreach.Jp2.Codestream
         /// <param name="parent"></param>
         /// <param name="tileIdx"></param>
         /// <param name="tpIdx"></param>
-        public JP2TilePart(
+        internal JP2TilePart(
             JP2Codestream parent,
             ushort tileIdx,
             byte tpIdx,
@@ -101,15 +107,16 @@ namespace Skyreach.Jp2.Codestream
             _packetOffsets = new List<uint>() { 0 };
 
             _sot = new SotMarker(tileIdx, tpIdx);
-            _pltMarkers = Enumerable.Empty<PltMarker>().ToList();
+            _pltMarkers = new List<PltMarker>() { new PltMarker(0) };
         }
 
-        protected internal JP2TilePart(JP2Codestream parent, long offset, long length)
+        internal JP2TilePart(JP2Codestream parent, long offset, long length)
             : base(parent, offset, length)
         {
             // packet offsets always has (packets + 1) elements it keeps the
             // next offset at the last element
             _packetOffsets = new List<uint>() { 0 };
+            _pltMarkers = new List<PltMarker>();
         }
 
         /// <summary>
@@ -156,13 +163,15 @@ namespace Skyreach.Jp2.Codestream
         }
 
         /// <summary>
-        /// TileIndex for this tile part
+        /// TileIndex for this tile part, 
+        /// Available when the tile-part is opened
         /// </summary>
         public ushort TileIndex { get { return _sot.TileIndex; } }
 
         /// <summary>
         /// The number of tile-parts in this tile. Possibly unknown. Same as
         /// TNsot field
+        /// Available when the tile-part is opened
         /// </summary>
         public byte TilePartCount
         {
@@ -175,6 +184,7 @@ namespace Skyreach.Jp2.Codestream
         /// the tiles' packets into groups of tile-parts.
         /// 
         /// Valid range is 0-254
+        /// Available when the tile-part is opened
         /// </summary>
         public byte TilePartIndex { get { return _sot.TilePartIndex; } }
 
@@ -209,6 +219,21 @@ namespace Skyreach.Jp2.Codestream
                     int packetCount,
                     byte[] buffer = null)
         {
+            if(!dst.IsFlushed)
+            {
+                throw new InvalidOperationException(String.Concat(
+                    "trying to transfer data between IO streams ",
+                    "without sealing the destination tile-part to ",
+                    "further addition of packets. ",
+                    "Must call to JP2TilePart.Flush()"));
+            }
+            if(!dst.IsOpened || !src.IsOpened)
+            {
+                throw new InvalidOperationException(String.Concat(
+                    "Trying to transfer data between unopened ",
+                    "tile-parts. Call OpenTilePart on the source ",
+                    "or destination codestreams"));
+            }
             if (buffer == null)
             {
                 buffer = new byte[1 << 16];
@@ -249,7 +274,22 @@ namespace Skyreach.Jp2.Codestream
         public void AddPacketLengths(
             IEnumerable<uint> packetLengths)
         {
-            ThrowIfSealed();
+            if (IsFlushed)
+            {
+                throw new InvalidOperationException(String.Concat(
+                    "Cannot add packets to a tile-part that ",
+                    "has already been flushed to the underlying IO ",
+                    "stream. You should call Flush only after you have ",
+                    "added all packets"));
+            }
+
+            if (!IsOpened)
+            {
+                throw new InvalidOperationException(String.Concat(
+                    "Cannot add packets to a tile-part that has ",
+                    "been closed. You can add packets only to a ",
+                    "tile-part which has been newly created"));
+            }
 
             if (!packetLengths.Any())
             {
@@ -269,12 +309,28 @@ namespace Skyreach.Jp2.Codestream
             // the total length in bytes of all the packets that are currently
             // placed in the tile-part.
             uint nextOffset = TotalPacketLength;
+            
             foreach (var length in packetLengths)
             {
                 nextOffset += length;
                 ThrowIfDataExceedsThreshold(nextOffset);
                 _packetOffsets.Add(nextOffset);
             }
+
+            int done = 0;
+            while(done < packetLengths.Count())
+            {
+                var plt = _pltMarkers.Last();
+                if (plt.IsFull)
+                {
+                    byte newZIdx = (byte)(plt.ZIndex + 1);
+                    _pltMarkers.Add(new PltMarker(newZIdx));
+                    plt = _pltMarkers.Last();
+                }
+                done += plt.Ingest(packetLengths.Skip(done));
+            }
+
+            UpdateLengthFields();
         }
 
         /// <summary>
@@ -285,20 +341,23 @@ namespace Skyreach.Jp2.Codestream
         /// </summary>
         public void Close()
         {
-            _isOpened = false;
+            if(!IsFlushed)
+            {
+                throw new InvalidProgramException(String.Concat(
+                    "Trying to close a tile-part without ",
+                    "flushing it to the underlying IO ",
+                    "leads to a loss of data"));
+            }
+
+            // must be re-opened to be re-used.
+            IsOpened = false;
             _packetOffsets.Clear();
             // The next offset after Clear() is the first offset.
             _packetOffsets.Add(0); 
             _pltMarkers.Clear();
         }
 
-        /// <summary>
-        /// Writes tilepart header markers to the underlying stream at the
-        /// given offset from its parent codestream. The headers written are
-        /// SOT and PLT (packet index). PLT is not written if tilepart is
-        /// empty. After using this method, you cannot add more packets.
-        /// </summary>
-        public override void FlushHeaders()
+        public override void Flush()
         {
             if (UnderlyingIO == null)
             {
@@ -307,9 +366,11 @@ namespace Skyreach.Jp2.Codestream
                     written after codestream headers");
             }
 
-            if (!_isSealed)
+            if(!IsOpened)
             {
-                Seal();
+                throw new InvalidOperationException(String.Concat(
+                    "Trying to flush to IO stream ",
+                    "a closed tile-part"));
             }
 
             if (_offset == OFFSET_NOT_SET)
@@ -328,6 +389,8 @@ namespace Skyreach.Jp2.Codestream
                 plt.WriteMarkerSegment(UnderlyingIO);
             }
             MarkerSegment.WriteMarker(MarkerType.SOD, UnderlyingIO);
+            // can be safely closed and reopened from the underlying stream.
+            IsFlushed = true;
         }
 
         /// <summary>
@@ -377,7 +440,7 @@ namespace Skyreach.Jp2.Codestream
 
         internal override CodestreamNode Open()
         {
-            if (_isOpened)
+            if (IsOpened)
             {
                 return this;
             }
@@ -450,87 +513,28 @@ namespace Skyreach.Jp2.Codestream
                     _packetOffsets.Add(packOffset);
                 }
             }
-            _isOpened = true;
+            // read and parsed successfully.
+            IsOpened = true;
             return this;
         }
 
-        private List<PltMarker> BuildPltFromOffsets()
-        {
-            if (IsEmpty)
-            {
-                throw new InvalidOperationException(
-                    "Cannot build a PLT marker for an empty tilepart");
-            }
-
-            int packets = _packetOffsets.Count() - 1;
-            if (packets > MarkerSegment.MAX_BODY_BYTES)
-            {
-                // what we should really do is divide PLT generation between
-                // multiple markers if its encoded length exceeds 2^16 the max
-                // length for a marker segment,
-
-                // there is at least one byte per packet length entry.
-                throw new InvalidOperationException(
-                    "too many packets for a single PLt marker");
-            }
-
-            List<uint> packetLengths = new List<uint>(packets);
-            for (int cur = 0, nxt = 1; cur < packets; cur++, nxt++)
-            {
-                uint currLength = _packetOffsets[nxt] - _packetOffsets[cur];
-                packetLengths.Add(currLength);
-            }
-
-            List<PltMarker> plts = new List<PltMarker>();
-            byte pltIndex = 0;
-            int encodedPacketsCount = 0;
-            while (encodedPacketsCount < packets)
-            {
-                PltMarker plt = new PltMarker(
-                    packetLengths,
-                    pltIndex,
-                    encodedPacketsCount);
-                encodedPacketsCount += plt.PacketCount;
-                pltIndex++;
-                plts.Add(plt);
-            }
-            return plts;
-        }
-
         /// <summary>
-        /// Seal this tilepart to additional packets. All of the tileparts'
-        /// packets have been added. It is now safe to generate a packet index
-        /// and compute the full length of this tilepart, that is comprised of:
-        /// marker segments, packet index and packet content.
+        /// Calculates the length of the PLT markers
+        /// and updates the _sodOffset and tile-part length fields
+        /// according to the new tile-part contents.
+        /// Should be called after each time new packets are added
+        /// to the tile-part for consistency
         /// </summary>
-        private void Seal()
+        private void UpdateLengthFields()
         {
-            // calculate Length
             _sodOffset = MarkerSegment.MarkerLength; // SOT marker
             _sodOffset += SotMarker.SOT_MARKER_LENGTH; // SOT segment
-            if (!IsEmpty)
-            {
-                _pltMarkers = BuildPltFromOffsets();
-                // SOT marker includes the length of the tilepart (and the PLT
-                // marker segment within). generate PLT to calculate its length,
-                // then update SOT
-                foreach (PltMarker plt in _pltMarkers)
-                {
-                    plt.ForceGeneration();
-                }
-
-                // PLT marker type and segment
-                _sodOffset += _pltMarkers
-                    .Sum(plt => plt.Length + MarkerSegment.MarkerLength);
-            }
-
+            // PLT marker type and segment
+            _sodOffset += _pltMarkers
+                .Sum(plt => plt.Length + MarkerSegment.MarkerLength);
             Length = _sodOffset + MarkerSegment.MarkerLength; // SOD marker
             Length += TotalPacketLength; // and packets
-
-            // cannot call WriteHeaders() until the tilepart length field is determined
             _sot.TilePartLength = (uint)Length;
-
-            _isSealed = true;
         }
 
         private void ThrowIfDataExceedsThreshold(long packetLength)
@@ -547,20 +551,11 @@ namespace Skyreach.Jp2.Codestream
 
         private void ThrowIfNotOpened()
         {
-            if (!_isOpened)
+            if (!IsOpened)
             {
                 throw new InvalidOperationException(String.Concat(
                     "Must open the tile-part before accessing ",
                     "its packets properties"));
-            }
-        }
-
-        private void ThrowIfSealed()
-        {
-            if (_isSealed)
-            {
-                throw new InvalidOperationException(
-                    "Tilepart is sealed, cannot add new packets");
             }
         }
     }

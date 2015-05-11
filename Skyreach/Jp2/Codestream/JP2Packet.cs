@@ -11,7 +11,7 @@ namespace Skyreach.Jp2.Codestream
     public class JP2Packet : CodestreamElement
     {
 
-        public JP2Packet(JP2TilePart parent, long offset, long length)
+        internal JP2Packet(JP2TilePart parent, long offset, long length)
             : base(parent, offset, length)
         {
 

@@ -18,6 +18,18 @@ namespace Skyreach.Jp2.Codestream.Markers
     /// </summary>
     public class SizMarker : MarkerSegment
     {
+
+        /// <summary>
+        /// SIZ marker is 38 bytes long and has extra 
+        /// 3 bytes for every color component
+        /// </summary>
+        /// <param name="components"></param>
+        /// <returns></returns>
+        public static int SizMarkerLength(int components)
+        {
+            return 38 + (components * 3);
+        }
+
         /// <summary>
         /// Initiates a SizMarker from an existing codestream.
         /// </summary>
@@ -95,6 +107,9 @@ namespace Skyreach.Jp2.Codestream.Markers
             Precisions = precisionPerComponent;
             SubSamplingX = subSamplingX;
             SubSamplingY = subSamplingY;
+
+            _markerBody = GenerateMarkerBody();
+            _markerLength = (ushort)(_markerBody.Length + 2);
         }
 
         /// <summary>
@@ -158,7 +173,7 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// </summary>
         public byte[] SubSamplingY { get; private set; }
 
-        protected internal override void Parse()
+        protected override void Parse()
         {
             MemoryStream mem = new MemoryStream(_markerBody);
 
@@ -235,7 +250,7 @@ namespace Skyreach.Jp2.Codestream.Markers
                     "Component count out of valid range");
             }
 
-            if(_markerLength != (38 + (Components*3)))
+            if(_markerLength != SizMarkerLength(Components))
             {
                 throw new ArgumentOutOfRangeException(
                     "Component count and length of SIZ marker do not agree");
@@ -260,7 +275,7 @@ namespace Skyreach.Jp2.Codestream.Markers
 
         }
 
-        public override byte[] GenerateMarkerBody()
+        protected override byte[] GenerateMarkerBody()
         {
             MemoryStream mem = new MemoryStream();
             // start writing the markerBody directly to memory stream

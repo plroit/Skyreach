@@ -54,6 +54,8 @@ namespace Skyreach.Jp2.Codestream
         /// </summary>
         private int _expectedTileParts;
 
+        private List<TlmMarker> _tlmMarkers;
+
         private Lazy<Size> _imageSize;
         /// <summary>
         /// The next tile-part index that has not yet called 'Bind' on his
@@ -94,21 +96,45 @@ namespace Skyreach.Jp2.Codestream
             int expectedTileParts)
             : base(null)
         {
-            _expectedTileParts = expectedTileParts;
-            ConstructCommon();
+            if(markers == null)
+            {
+                throw new ArgumentNullException("markers");
+            }
 
             Markers = markers.ToDictionary(marker => marker.Type);
-
-            var missing = MandatoryMarkers
-                .Where(mandatory => !Markers.ContainsKey(mandatory));
-
+            var missing = MandatoryMarkers.Where(
+                mandatory => !Markers.ContainsKey(mandatory));
             if (missing.Any())
             {
                 throw new ArgumentException(
                     "Mandatory marker is missing: " + missing.First());
             }
 
+            _expectedTileParts = expectedTileParts;
+            ConstructCommon();
             Tiles = ConstructTiles();
+            _tlmMarkers = new List<TlmMarker>() { new TlmMarker(0) };
+
+            UpdateSotOffset(markers, expectedTileParts);
+        }
+
+        /// <summary>
+        /// Updates the _sotOffset field according to the number of expected
+        /// tile-parts in the codestream and the other marker segments
+        /// that should appear in the main header.
+        /// </summary>
+        /// <param name="markers"></param>
+        /// <param name="expectedTileParts"></param>
+        private void UpdateSotOffset(
+            IEnumerable<MarkerSegment> markers, 
+            int expectedTileParts)
+        {
+            _sotOffset = MarkerSegment.MarkerLength; // SOC
+            foreach (var marker in markers)
+            {
+                _sotOffset += MarkerSegment.MarkerLength + marker.Length;
+            }
+            _sotOffset += GetTotalTlmLength(expectedTileParts);
         }
 
         public ushort Components
@@ -225,25 +251,62 @@ namespace Skyreach.Jp2.Codestream
         protected internal override Stream UnderlyingIO { get; protected set; }
 
         /// <summary>
-        /// Adds the specified tile-part to the ordered list of
-        /// tile-parts that compose this codestream object.
+        /// Creates a new tile-part instance and adds it to 
+        /// an ordered list of tile-parts that compose this codestream.
         /// </summary>
-        /// <param name="tilePart"></param>
-        public void Add(JP2TilePart tilePart)
+        /// <param name="tileIdx">
+        /// The tile index that the tile-part belongs to
+        /// </param>
+        /// <param name="isLastInTile">
+        /// True if this should be the last tile-part
+        /// for this tile. Needed for the TNsot field in the
+        /// SOT marker.
+        /// </param>
+        /// <returns>
+        /// A tile-part instance which is added to this codestream.
+        /// </returns>
+        public JP2TilePart CreateTilePart(ushort tileIdx, bool isLastInTile)
         {
-            if (tilePart.Parent != this)
+            if(IsFlushed)
             {
-                throw new InvalidOperationException(
-                    "tile-part parent must be this codestream");
-            }
-            if (tilePart.TileIndex >= Tiles.Count())
-            {
-                throw new ArgumentOutOfRangeException(
-                    "tile-part tile index is greater than the number of tiles");
+                throw new InvalidOperationException(String.Concat(
+                    "Cannot add tile-parts to a codestream that ",
+                    "has already been flushed to the underlying IO ",
+                    "stream. You should call Flush only after you have ",
+                    "added all tile-parts and all packets"));
             }
 
-            Tiles[tilePart.TileIndex].Add(tilePart);
-            _tileparts.Add(tilePart);
+            if(!IsOpened)
+            {
+                throw new InvalidOperationException(String.Concat(
+                    "Cannot add tile-parts to a codestream that has ",
+                    "been closed. You can add tile-parts only to a ",
+                    "codestream which has been newly created"));
+            }
+            byte tpIdx = Tiles[tileIdx].TilePartCount;
+            JP2TilePart tp = new JP2TilePart(this, tileIdx, tpIdx, true);
+            Tiles[tileIdx].Add(tp, isLastInTile);
+            _tileparts.Add(tp);
+            AddToTlm(tp);
+            return tp;
+        }
+
+        private void AddToTlm(JP2TilePart tp)
+        {
+            TlmMarker tlm = _tlmMarkers.Last();
+            if (tlm.IsFull)
+            {
+                if (_tlmMarkers.Count >= TlmMarker.MaxMarkers)
+                {
+                    throw new InvalidOperationException(String.Concat(
+                        "Cannot add more tile-parts, Exceeded the ",
+                       "limit of TLM markers in codestream"));
+                }
+
+                _tlmMarkers.Add(new TlmMarker((byte)_tlmMarkers.Count));
+                tlm = _tlmMarkers.Last();
+            }
+            tlm.Add(tp);
         }
 
         /// <summary>
@@ -285,49 +348,8 @@ namespace Skyreach.Jp2.Codestream
             }
             _tileparts.Clear();
 
-            _isOpened = false;
-        }
-
-        /// <summary>
-        /// Writes the headers of the codestream to the underlying IO stream.
-        /// Should be used only when writing raw codestream images.
-        /// When using full-fledged JPEG2000 files with Jp2File.Create
-        /// use Jp2File.FlushHeaders instead.
-        /// </summary>
-        public override void FlushHeaders()
-        {
-            if (_offset == OFFSET_NOT_SET)
-            {
-                throw new InvalidOperationException(
-                    "Should bind CodestreamNode to a stream");
-            }
-            // Writes the main headers of this codestream The headers include
-            // SOC and every other marker in the Markers collection except TLM.
-            // TLM is written when the codestream is sealed, after all of the
-            // tileparts are generated. To write the TLM and EOC marker invoke 
-            // WriteFinalizers().
-            UnderlyingIO.Seek(Position, SeekOrigin.Begin);
-            int offset = 0;
-            offset += MarkerSegment.WriteMarker(MarkerType.SOC, UnderlyingIO);
-            offset += Markers[MarkerType.SIZ].WriteMarkerSegment(UnderlyingIO);
-            offset += Markers[MarkerType.COD].WriteMarkerSegment(UnderlyingIO);
-            offset += Markers[MarkerType.QCD].WriteMarkerSegment(UnderlyingIO);
-            var optionalMarkers = Markers.Keys.Except(MandatoryMarkers);
-            foreach (var opt in optionalMarkers)
-            {
-                offset += Markers[opt].WriteMarkerSegment(UnderlyingIO);
-            }
-
-            // Reserve space for TLM. Write tile-part index after codestream
-            // generation has ended. Tile parts may be produced incrementally,
-            // and their lengths remain unknown till WriteFinalizers is called.
-            if (_expectedTileParts >= 0)
-            {
-                int tileparts = Math.Max(_expectedTileParts, _tileparts.Count());
-                offset += GetTotalTlmLength(tileparts);
-            }
-
-            _sotOffset = offset;
+            // Must be re-opened to be re-used.
+            IsOpened = false;
         }
 
         public override IEnumerable<CodestreamElement> OpenChildren()
@@ -358,53 +380,50 @@ namespace Skyreach.Jp2.Codestream
             return Tiles[tileIdx].OpenTilePart(tilepartIdx);
         }
 
-        /// <summary>
-        /// Writes the final marker EOC of this codestream, as well as a TLM
-        /// marker segment. A space for a TLM segment has been reserved upon
-        /// creation of this codestream. After sealing, all of the tilepart
-        /// lengths and their general amount are known and can be safely written
-        /// to the underlying IO.
-        /// </summary>
-        public void WriteFinalizers()
+        public override void Flush()
         {
-            if (UnderlyingIO == null)
+            if (_offset == OFFSET_NOT_SET)
             {
-                throw new Exception(
-                    @"attempt to write stream headers without supplying
-                     an underlying IO stream using WriteHeaders");
+                throw new InvalidOperationException(
+                    "Should bind CodestreamNode to a stream");
             }
+            // Writes the main headers of this codestream The headers include
+            // SOC and every other marker in the Markers collection except TLM.
+            // TLM is written when the codestream is sealed, after all of the
+            // tileparts are generated. To write the TLM and EOC marker invoke 
+            // WriteFinalizers().
 
-            // calculate space for tile parts. packets and SOT
+            UnderlyingIO.Seek(Position, SeekOrigin.Begin);
+            int offset = 0;
+            offset += MarkerSegment.WriteMarker(MarkerType.SOC, UnderlyingIO);
+            offset += Markers[MarkerType.SIZ].WriteMarkerSegment(UnderlyingIO);
+            offset += Markers[MarkerType.COD].WriteMarkerSegment(UnderlyingIO);
+            offset += Markers[MarkerType.QCD].WriteMarkerSegment(UnderlyingIO);
+            var optionalMarkers = Markers.Keys.Except(MandatoryMarkers);
+            foreach (var opt in optionalMarkers)
+            {
+                offset += Markers[opt].WriteMarkerSegment(UnderlyingIO);
+            }
+            foreach (var tlm in _tlmMarkers)
+            {
+                offset += tlm.WriteMarkerSegment(UnderlyingIO);
+            }
+            // flush only the ones that were not flushed incrementally
+            // by user code.
+            foreach (var tp in _tileparts.Where(tp => !tp.IsFlushed))
+            {
+                tp.Flush();
+            }
             long tpLength = _tileparts.Sum(tp => tp.Length);
-            if (_expectedTileParts > _tileparts.Count())
-            {
-                throw new ArgumentException(
-                    @"Expected more tile-parts than actual amount
-                     does not support generating empty tile parts
-                     to fill reserved space in TLM");
-            }
-
-            //int batch = TlmMarker.MaxEntries;
-            int tpCount = _tileparts.Count;
-            int tlmLength = GetTotalTlmLength(tpCount);
-            int tlmCount = BitHacks.DivCeil(tpCount, TlmMarker.MaxEntries);
-            long tlmOffset = _sotOffset - tlmLength;
-            UnderlyingIO.Seek(Position + tlmOffset, SeekOrigin.Begin);
-            for(byte tlmIdx = 0; tlmIdx < tlmCount; tlmIdx++)
-            {
-                var tpInTlm = _tileparts
-                    .Skip(tlmIdx*TlmMarker.MaxEntries)
-                    .Take(TlmMarker.MaxEntries);
-                var tlm = new TlmMarker(tlmIdx, tpInTlm);
-                tlm.WriteMarkerSegment(UnderlyingIO);
-            }
-
-            long eocOffset = _sotOffset + tpLength;
-            UnderlyingIO.Seek(Position + eocOffset, SeekOrigin.Begin);
-            MarkerSegment.WriteMarker(MarkerType.EOC, UnderlyingIO);
             // account for all headers, all tile-parts and EOC marker
-            Length = _sotOffset + tpLength + MarkerSegment.MarkerLength;
+            Length = FirstChildOffset + tpLength + MarkerSegment.MarkerLength;
+            long eocOffset = Position + FirstChildOffset + tpLength;
+            UnderlyingIO.Seek(eocOffset, SeekOrigin.Begin);
+            MarkerSegment.WriteMarker(MarkerType.EOC, UnderlyingIO);
+            // can be safely closed an re-opened from the underlying stream
+            IsFlushed = true;
         }
+
         internal long AssignOffset(JP2TilePart tp)
         {
             bool rc = _nextUnboundTilepartIdx < _tileparts.Count;
@@ -436,7 +455,7 @@ namespace Skyreach.Jp2.Codestream
 
         internal override CodestreamNode Open()
         {
-            if (_isOpened)
+            if (IsOpened)
             {
                 return this;
             }
@@ -501,11 +520,18 @@ namespace Skyreach.Jp2.Codestream
                     tlmX.ZIndex.CompareTo(tlmY.ZIndex));
             }
 
-            Tiles = tlmMarkers.Any() ?
-                ConstructTilesFromTlm(tlmMarkers) :
+            Tiles = ConstructTiles();
+            if(tlmMarkers.Any())
+            {
+                ConstructTilesFromTlm(tlmMarkers);
+            }
+            else
+            {
                 ConstructTilesFromCodestream();
+            }
 
-            _isOpened = true;
+            // parsed and opened successfully.
+            IsOpened = true;
             return this;
         }
 
@@ -545,7 +571,7 @@ namespace Skyreach.Jp2.Codestream
             return tiles.ToList();
         }
 
-        private IReadOnlyList<JP2Tile> ConstructTilesFromCodestream()
+        private void ConstructTilesFromCodestream()
         {
             if (_sotOffset == 0)
             {
@@ -555,8 +581,7 @@ namespace Skyreach.Jp2.Codestream
                     " was encountered");
             }
 
-            IReadOnlyList<JP2Tile> tiles = ConstructTiles();
-            int tileCount = tiles.Count();
+            int tileCount = Tiles.Count();
 
             UnderlyingIO.Seek(Position + _sotOffset, SeekOrigin.Begin);
 
@@ -580,38 +605,39 @@ namespace Skyreach.Jp2.Codestream
                         "SOT TileIndex is too large for number of tiles" +
                         " calculated from SIZ tile and image size");
                 }
+                AddTilePart(offset, sot.TileIndex, sot.TilePartLength);
 
-                tiles[sot.TileIndex].Add(new JP2TilePart(
-                    this,
-                    offset,
-                    sot.TilePartLength));
                 long skip = sot.TilePartLength - SotMarker.SOT_MARKER_LENGTH;
                 offset += sot.TilePartLength;
-
                 UnderlyingIO.Seek(skip, SeekOrigin.Current);
             }
-            return tiles;
+            return;
         }
 
-        private IReadOnlyList<JP2Tile> ConstructTilesFromTlm(
+        private void ConstructTilesFromTlm(
                     List<TlmMarker> zOrderedTlmMarkers)
         {
-            IReadOnlyList<JP2Tile> tiles = ConstructTiles();
             // flatten
             long offset = _sotOffset;
             foreach (var tlm in zOrderedTlmMarkers)
             {
-                foreach (TlmMarker.TlmEntry entry in tlm)
+                foreach (TlmEntry entry in tlm)
                 {
-                    JP2Tile tile = tiles[entry.TileIndex];
-                    tile.Add(new JP2TilePart(
-                        this,
-                        offset,
-                        entry.TilePartLength));
-                    offset += entry.TilePartLength;
+                    offset = AddTilePart(
+                        offset, 
+                        entry.TileIndex, 
+                        entry.TilePartLength);
                 }
             }
-            return tiles;
+        }
+
+        private long AddTilePart(long offset, ushort tileIdx, long tpLength)
+        {
+            var tp = new JP2TilePart(this, offset, tpLength);
+            Tiles[tileIdx].Add(tp, false);
+            _tileparts.Add(tp);
+            offset += tpLength;
+            return offset;
         }
 
         /// <summary>

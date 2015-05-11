@@ -19,14 +19,21 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// have to be deleted
         /// </summary>
         public const int PLT_LENGTH_LIMIT = (MarkerSegment.MAX_BODY_BYTES - 32);
-        private List<uint> _packetLengths;
 
         public byte ZIndex { get; private set; }
+
+        private ushort _encodedBytes;
+
+        private readonly MemoryStream _encodedPacketLengths;
 
         protected internal PltMarker(ushort markerLength, byte[] markerBody)
             : base(MarkerType.PLT, markerLength, markerBody)
         {
-            _packetLengths = new List<uint>();
+            _encodedBytes = (ushort) (markerLength - 3);
+            _encodedPacketLengths = new MemoryStream(
+                _markerBody,
+                1,
+                _encodedBytes);
             Parse();
         }
 
@@ -41,74 +48,74 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// <param name="packetLengths"></param>
         /// <param name="zIndex"></param>
         /// <param name="firstLengthIdx"></param>
-        public PltMarker(List<uint> packetLengths, byte zIndex, int firstLengthIdx) 
+        public PltMarker(byte zIndex) 
             : base(MarkerType.PLT)
         {
-            _packetLengths = new List<uint>();
-            MemoryStream mem = new MemoryStream();
+            _encodedPacketLengths = new MemoryStream();
             ZIndex = zIndex;
-            int pltLength = 0;
-            int encodedCount = 0;
-            for (int idx = firstLengthIdx; idx < packetLengths.Count; idx++ )
-            {
-                _packetLengths.Add(packetLengths[idx]);
-                pltLength += mem.EncodeVarLen(packetLengths[idx]);
-                encodedCount++;
-                if (pltLength > PLT_LENGTH_LIMIT)
+        }
+
+        public int Ingest(IEnumerable<uint> packetLengths)
+        {
+            // the plt length limit is a soft limit,
+            // we can overstep it with by a single packet
+            int bytesLeft = PLT_LENGTH_LIMIT - _encodedBytes;
+            int count = 0;
+            foreach(uint packLen in packetLengths)
+            {                
+                int inc = _encodedPacketLengths.EncodeVarLen(packLen);
+                _encodedBytes += (ushort) inc;
+                bytesLeft -= inc;
+                count++;
+                if(bytesLeft < 0)
                 {
-                    // do not delete the last packet length, it is fine!
                     break;
                 }
             }
-            // it is not efficient, but leave actual encoding to 
-            // a call for GenerateMarkerSegment. Do not use stream
-            // for markerBody
-
+            // 2 bytes for the length field,
+            // another byte for the Zplt field
+            _markerLength = (ushort) (_encodedBytes + 3);
+            _isDirty = true;
+            return count;
         }
 
-        protected internal override void Parse()
+        protected override void Parse()
         {
             if(_markerLength < 4)
             {
                 throw new ArgumentOutOfRangeException(
                     "PLT marker is too short");
             }
-
-            var mem = new MemoryStream(_markerBody);
-            ZIndex = mem.ReadUInt8();
-            int bytesLeft = _markerLength - 3;
-            while(bytesLeft > 0)
-            {
-                uint currPacketLength = mem.DecodeVarLen(ref bytesLeft);
-                _packetLengths.Add(currPacketLength);
-            }
+            ZIndex = _markerBody[0];
         }
 
-        public override byte[] GenerateMarkerBody()
+        protected override byte[] GenerateMarkerBody()
         {
-            int len = 0;
-            int packets = _packetLengths.Count();
-            if (packets == 0)
+            if (_encodedBytes == 0)
             {
                 return new byte[0];
             }
-            var mem = new MemoryStream(packets);
+            // not very memory efficient, but 5 lines!
+            var mem = new MemoryStream(_encodedBytes + 1);
             mem.WriteUInt8(ZIndex);
-            for (int p = 0; p < packets; p++)
-            {
-                len += mem.EncodeVarLen(_packetLengths[p]);
-            }
-            if (len > UInt16.MaxValue)
-            {
-                throw new ArgumentOutOfRangeException(
-                    "PLT is more than 2^16bytes, need to create multiple PLT");
-            }
+            _encodedPacketLengths.Seek(0, SeekOrigin.Begin);
+            _encodedPacketLengths.CopyTo(mem);
             return mem.ToArray();
         }
 
+
         public IEnumerator<uint> GetEnumerator()
         {
-            return _packetLengths.GetEnumerator();
+            // invoking any LINQ queries from two
+            // threads simultaneously would be disastrous 
+            _encodedPacketLengths.Seek(0, SeekOrigin.Begin);
+            int bytesLeft = _encodedBytes;
+            while (bytesLeft > 0)
+            {
+                uint currPacketLength =
+                    _encodedPacketLengths.DecodeVarLen(ref bytesLeft);
+                yield return currPacketLength;
+            }
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
@@ -116,7 +123,16 @@ namespace Skyreach.Jp2.Codestream.Markers
             return GetEnumerator();
         }
 
-        public int PacketCount { get { return _packetLengths.Count(); } }
-
+        /// <summary>
+        /// returns true when this PLT marker segment
+        /// can not have any more packet lengths added into it
+        /// </summary>
+        public bool IsFull
+        {
+            get
+            {
+                return _encodedBytes >= PLT_LENGTH_LIMIT;
+            }
+        }
     }
 }

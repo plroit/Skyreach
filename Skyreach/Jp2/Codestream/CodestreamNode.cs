@@ -12,7 +12,24 @@ namespace Skyreach.Jp2.Codestream
 
         public const long OFFSET_NOT_SET = -1;
 
-        protected bool _isOpened;
+        /// <summary>
+        /// true iff the codestream node was opened and
+        /// parsed from the underlying IO stream,
+        /// or if the codestream node had been recently 
+        /// created from scratch and was not yet closed.
+        /// </summary>
+        public bool IsOpened { get; protected set; }
+
+        /// <summary>
+        /// true if this codestream node has a 
+        /// backup in the underlying IO stream
+        /// and can be safely closed and re-opened.
+        /// True for nodes that have been parsed
+        /// from an underlying IO stream, or for nodes
+        /// that have been created from scratch but already
+        /// flushed to the underlying IO stream.
+        /// </summary>
+        public bool IsFlushed { get; protected set; }
 
         protected internal CodestreamNode(
             CodestreamNode parent, 
@@ -20,12 +37,15 @@ namespace Skyreach.Jp2.Codestream
             long length)
             : base(parent, offset, length)
         {
+            // created from an underlying stream
+            IsFlushed = true;
         }
 
         protected internal CodestreamNode(CodestreamNode parent)
-            : this(parent, OFFSET_NOT_SET, -1)
+            : base(parent, OFFSET_NOT_SET, -1)
         {
-
+            // created from scratch
+            IsOpened = true;
         }
 
         public bool IsRoot
@@ -112,7 +132,7 @@ namespace Skyreach.Jp2.Codestream
         /// performing necessary finalizing steps, such as child index
         /// generation and total length calculation
         /// </summary>
-        public abstract void FlushHeaders();
+        public abstract void Flush();
 
     }
 }

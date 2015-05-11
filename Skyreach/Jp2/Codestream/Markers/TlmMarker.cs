@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace Skyreach.Jp2.Codestream.Markers
 {
-    public class TlmMarker : MarkerSegment, IEnumerable<TlmMarker.TlmEntry>
+    public class TlmMarker : MarkerSegment, IEnumerable<TlmEntry>
     {
         /// <summary>
         /// Each TLM entry may use up to 6 bytes, 
@@ -23,34 +23,37 @@ namespace Skyreach.Jp2.Codestream.Markers
         public const int MaxEntries =
             (MarkerSegment.MAX_BODY_BYTES - 2) / TlmEntryMaxLength;
 
+        private readonly List<JP2TilePart> _tileparts;
+
+        public int SizeTileIdx { get; private set; }
+
+        public int SizeTilePartLength { get; private set; }
+
+        public bool IsFull { get { return _tileparts.Count >= MaxEntries; } }
+
         /// <summary>
         /// The maximal number of TLM markers that may appear 
         /// in a codestream, limited by zTLM field.
         /// </summary>
         public const int MaxMarkers = byte.MaxValue; 
 
-        private readonly List<TlmEntry> _tilePartLengths;
-
         public byte ZIndex { get; private set; }
 
         protected internal TlmMarker(ushort markerLength, byte[] markerBody)
             : base(MarkerType.TLM, markerLength, markerBody)
         {
-            _tilePartLengths = new List<TlmEntry>();
+            _tileparts = null;
             Parse();
         }
 
-        public TlmMarker(byte zTlm, IEnumerable<JP2TilePart> tileparts) : 
+        public TlmMarker(byte zTlm) : 
             base(MarkerType.TLM)
         {
             ZIndex = zTlm;
-            _tilePartLengths = new List<TlmEntry>(tileparts.Count());
-            _tilePartLengths = tileparts
-                .Select(tp => new TlmEntry(tp.TileIndex, (uint) tp.Length))
-                .ToList();
+            _tileparts = new List<JP2TilePart>();
         }
 
-        protected internal override void Parse()
+        protected override void Parse()
         {
             if(_markerLength < 4)
             {
@@ -83,39 +86,23 @@ namespace Skyreach.Jp2.Codestream.Markers
                 throw new ArgumentException(
                     "not enough bytes in TLM to describe an integer amount of tile parts");
             }
-            int tpCount =  (_markerLength - 4) / sizTlmEntry;
-            for(ushort tp = 0; tp < tpCount; tp++)
-            {
-                ushort tileIdx = 0;
-                uint tilePartLength;
-                if (sizTileIdx == 0)
-                {
-                    // one tile-part per tile
-                    tileIdx = tp;
-                }
-                else if (sizTileIdx == 1)
-                {
-                    tileIdx = mem.ReadUInt8();
-                }
-                else
-                {
-                    tileIdx = mem.ReadUInt16();
-                }
-
-                if(sizTilePartLen == 2)
-                {
-                    tilePartLength = mem.ReadUInt16();
-                }
-                else
-                {
-                    tilePartLength = mem.ReadUInt32();
-                }
-                _tilePartLengths.Add(new TlmEntry(tileIdx, tilePartLength));
-            }
-
+            SizeTilePartLength = sizTilePartLen;
+            SizeTileIdx = sizTileIdx;
         }
 
-        public override byte[] GenerateMarkerBody()
+        public void Add(JP2TilePart tp)
+        {
+            if(_tileparts.Count >= MaxEntries)
+            {
+                throw new InvalidOperationException(String.Concat(
+                    "Exceeded limit for this TLM marker, ",
+                    "must create a new TLM"));
+            }
+            _tileparts.Add(tp);
+            _isDirty = true;
+        }
+
+        protected override byte[] GenerateMarkerBody()
         {
             var mem = new MemoryStream();
             mem.WriteUInt8(ZIndex);
@@ -126,31 +113,49 @@ namespace Skyreach.Jp2.Codestream.Markers
             byte sTlm = (byte)(((sizTilePartLength << 2) | sizTileIndex) << 4);
             mem.WriteUInt8(sTlm);
 
-            foreach(var entry in _tilePartLengths)
+            foreach(var tp in _tileparts)
             {
-                mem.WriteUInt16(entry.TileIndex);
-                mem.WriteUInt32(entry.TilePartLength);
+                mem.WriteUInt16(tp.TileIndex);
+                mem.WriteUInt32((uint) tp.Length);
             }
 
             return mem.ToArray();
 
         }
 
-        public class TlmEntry
+        public IEnumerator<TlmEntry> GetEnumerator()
         {
-            public readonly ushort TileIndex;
-            public readonly uint TilePartLength;
-
-            public TlmEntry(ushort tileIndex, uint tilePartLength)
+            var mem = new MemoryStream(_markerBody, 2, _markerLength - 4);
+            int sizTlmEntry = SizeTileIdx + SizeTilePartLength;
+            int tpCount = (_markerLength - 4) / sizTlmEntry;
+            for (ushort tp = 0; tp < tpCount; tp++)
             {
-                TileIndex = tileIndex;
-                TilePartLength = tilePartLength;
-            }
-        }
+                ushort tileIdx = 0;
+                uint tilePartLength;
+                if (SizeTileIdx == 0)
+                {
+                    // one tile-part per tile
+                    tileIdx = tp;
+                }
+                else if (SizeTileIdx == 1)
+                {
+                    tileIdx = mem.ReadUInt8();
+                }
+                else
+                {
+                    tileIdx = mem.ReadUInt16();
+                }
 
-        public IEnumerator<TlmMarker.TlmEntry> GetEnumerator()
-        {
-            return _tilePartLengths.GetEnumerator();
+                if (SizeTilePartLength == 2)
+                {
+                    tilePartLength = mem.ReadUInt16();
+                }
+                else
+                {
+                    tilePartLength = mem.ReadUInt32();
+                }
+                yield return new TlmEntry(tileIdx, tilePartLength);
+            }
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
@@ -173,6 +178,18 @@ namespace Skyreach.Jp2.Codestream.Markers
             // variable length
             tlmLength += tileparts * TlmEntryMaxLength;
             return tlmLength;
+        }
+    }
+
+    public class TlmEntry
+    {
+        public readonly ushort TileIndex;
+        public readonly uint TilePartLength;
+
+        public TlmEntry(ushort tileIndex, uint tilePartLength)
+        {
+            TileIndex = tileIndex;
+            TilePartLength = tilePartLength;
         }
     }
 }

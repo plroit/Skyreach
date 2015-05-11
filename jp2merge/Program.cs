@@ -153,32 +153,6 @@ namespace jp2merge
             return jp2Files[idx];
         }
 
-        private static void PrintUsage()
-        {
-//            StringBuilder sb = new StringBuilder();
-//            sb
-//                .AppendLine("usage: jp2merge argfile.txt")
-//                    .Append("\t")
-//                    .AppendLine()
- 
-//                "            X Y output.jp2 input0.jp2..."
-//                + Environment.NewLine +
-//                @" jp2merge combines distinct JPEG2000 images to a single image"
-//                + Environment.NewLine +
-//                @"Input images must all share the same coding parameters, and
-//                 have no border cut tiles."
-//                + Environment.NewLine +
-//                 @"The inputs must have one of the
-//                 following properties: Either have their tile origin and image
-//                 origin set at the tile location in the single combined image"
-//                 + Environment.NewLine +
-//                 @"or their tile size must be a power of two and follows the
-//                    next equation: nDWT <= log2(tileSize) log2(codeblockSize)"
-//                + Environment.NewLine +
-//                @"where nDWT is the number of wavelet decompositions performed";
-//            Console.Out.WriteLine(desc);
-        }
-
         private static void WarnIfClipped(JP2Codestream src, CodMarker cod)
         {
             bool tileSizePow2 = true;
@@ -194,18 +168,24 @@ namespace jp2merge
             isClippedCodeblock |= diffTileCblk < cod.DecompositionLevels;
             if (isClippedCodeblock && !tileSizePow2)
             {
-                Console.WriteLine(
-                    @"Codeblock in one of the subbands is clipped by the
-                    actual subband dimensions, to perform merging well
-                    input origin must be aligned at the same position
-                    as their output coordinates");
+                var sb = new StringBuilder();
+                Console.WriteLine(sb
+                    .AppendLine(
+                        "Codeblock in one of the subbands is clipped by the ")
+                    .AppendLine(
+                        "actual subband dimensions, to perform merging well ")
+                    .AppendLine(
+                        "input origin must be aligned at the same position ")
+                    .AppendLine(
+                        "as their output coordinates")
+                    .ToString());
             }
         }
 
-        private void CopyTile(int tIdx, Jp2File dstJp2)
+        private void CopyTile(ushort tIdx, Jp2File dstJp2)
         {
             JP2Codestream src = OpenJp2(tIdx).OpenCodestream();
-            JP2Codestream dst = dstJp2.Codestream;
+            JP2Codestream dst = dstJp2.OpenCodestream();
             ThrowIfDifferentInputs(_firstCodestream, src);
 
             JP2Tile srcTile = src.Tiles[0];
@@ -260,14 +240,9 @@ namespace jp2merge
             }
         }
 
-        private void CopyTileResLevel(JP2Codestream dst, JP2Tile srcTile, int tIdx, int r)
+        private void CopyTileResLevel(JP2Codestream dst, JP2Tile srcTile, ushort tIdx, int r)
         {
-            var dstTilePart = new JP2TilePart(
-                dst,
-                (ushort)tIdx,
-                (byte)(_firstCodestream.DecompositionLevels - r),
-                true);
-            dst.Add(dstTilePart);
+            var dstTilePart = dst.CreateTilePart(tIdx, true);
 
             // get all packets for this resolution level and source tile
             // currently support only a single tile in source image for every
@@ -289,7 +264,7 @@ namespace jp2merge
             EnumerateIntervals<int>(intervals, srcTile, addPacketLengths);
 
             // bulk transfer packet data
-            dstTilePart.FlushHeaders();
+            dstTilePart.Flush();
             byte[] buffer = new byte[1 << 16];
             Func<JP2TilePart, int, int, uint, uint> bulkTransfer =
                 (tpSrc, pckStart, pckCount, dstOffset) =>
@@ -312,10 +287,6 @@ namespace jp2merge
 
         private void Dispose()
         {
-            foreach (var jp2 in _jp2s)
-            {
-                jp2.Dispose();
-            }
             foreach (var fs in _files)
             {
                 fs.Dispose();
@@ -394,17 +365,21 @@ namespace jp2merge
             CodMarker cod = _firstCodestream.Markers[MarkerType.COD] as CodMarker;
             QcdMarker qcd = _firstCodestream.Markers[MarkerType.QCD] as QcdMarker;
             WarnIfClipped(_firstCodestream, cod);
-            using (Jp2File dst = Jp2File.Create(
-                siz, cod, qcd, expectedTileParts, false, _dest))
+            ComMarker com = new ComMarker("https://github.com/plroit/Skyreach");
+            var markers = new List<MarkerSegment>()
             {
-                dst.FlushHeaders();
-                for (int tIdx = 0; tIdx < tiles; tIdx++)
-                {
-                    CopyTile(tIdx, dst);
-                }
-                // TODO maybe write finalizers only for jp2file?
-                dst.Codestream.WriteFinalizers();
+                siz, cod, qcd, com
+            };
+            Jp2File dst = Jp2File.Create(
+                markers, 
+                expectedTileParts, 
+                false, 
+                _dest);            
+            for (ushort tIdx = 0; tIdx < tiles; tIdx++)
+            {
+                CopyTile(tIdx, dst);
             }
+            dst.Flush();            
         }
 
         private void ThrowIfDifferentInputs(

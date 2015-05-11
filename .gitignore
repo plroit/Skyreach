@@ -24,3 +24,4 @@ bld/
 Out/*
 /Out/
 /packages/CommandLineParser.1.9.71/
+/TestResults/

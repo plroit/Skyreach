@@ -118,6 +118,9 @@ namespace Skyreach.Jp2.Codestream.Markers
                 _ppx = new byte[] {0xF};
                 _ppy = new byte[] {0xF};
             }
+
+            _markerBody = GenerateMarkerBody();
+            _markerLength = (ushort) (_markerBody.Length + 2);
         }
 
         /// <summary>
@@ -215,7 +218,7 @@ namespace Skyreach.Jp2.Codestream.Markers
         /// </summary>
         public IReadOnlyList<Point> PrecinctPartitions;
 
-        protected internal override void Parse()
+        protected override void Parse()
         {
             if(_markerLength < 12)
             {
@@ -334,7 +337,7 @@ namespace Skyreach.Jp2.Codestream.Markers
 
         }
 
-        public override byte[] GenerateMarkerBody()
+        protected override byte[] GenerateMarkerBody()
         {
             MemoryStream mem = new MemoryStream();
             mem.WriteUInt8((byte)_scod);
@@ -351,7 +354,7 @@ namespace Skyreach.Jp2.Codestream.Markers
                 byte precSize = (byte)((_ppy[p] << 4) | _ppx[p]);
                 mem.WriteUInt8(precSize);
             }
-                return mem.ToArray();
+            return mem.ToArray();
         }
 
         [Flags]
