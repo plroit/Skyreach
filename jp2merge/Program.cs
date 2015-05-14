@@ -2,6 +2,7 @@
 using Skyreach.Jp2.Codestream.Markers;
 using Skyreach.Jp2.FileFormat;
 using Skyreach.Query;
+using Skyreach.Query.Precise;
 using Skyreach.Util;
 using System;
 using System.Collections.Generic;
@@ -53,10 +54,8 @@ namespace jp2merge
         /// </summary>
         private readonly string[] _paths;
 
-        /// <summary>
-        /// Query objects associated with input images.
-        /// </summary>
-        private readonly QueryPlanner[] _queries;
+        private QueryContext[] _queryContext;
+
 
         /// <summary>
         /// Output file stream
@@ -101,25 +100,9 @@ namespace jp2merge
             }
 
             _files = new FileStream[inputCount];
-            _queries = new QueryPlanner[inputCount];
             _jp2s = new Jp2File[inputCount];
 
             _firstCodestream = OpenJp2(0).OpenCodestream();
-        }
-
-        private static QueryPlanner GetQuery(
-            int idx,
-            string[] paths,
-            Jp2File[] jp2Files,
-            QueryPlanner[] queries)
-        {
-            if (queries[idx] == null)
-            {
-                Jp2File jp2 = Open(idx, paths, jp2Files);
-                JP2Codestream cs = jp2.OpenCodestream();
-                queries[idx] = QueryPlanner.Create(cs);
-            }
-            return queries[idx];
         }
 
         private static void Main(string[] args)
@@ -187,14 +170,10 @@ namespace jp2merge
             JP2Codestream src = OpenJp2(tIdx).OpenCodestream();
             JP2Codestream dst = dstJp2.OpenCodestream();
             ThrowIfDifferentInputs(_firstCodestream, src);
-
-            JP2Tile srcTile = src.Tiles[0];
-
-            for (int r = src.DecompositionLevels; r >= 0; r--)
+            for (int r = 0; r <= src.DecompositionLevels; r++)
             {
-                CopyTileResLevel(dst, srcTile, tIdx, r);
+                CopyTileResLevel(dst, src, tIdx, r);
             }
-            srcTile.Close();
         }
 
         /// <summary>
@@ -240,19 +219,20 @@ namespace jp2merge
             }
         }
 
-        private void CopyTileResLevel(JP2Codestream dst, JP2Tile srcTile, ushort tIdx, int r)
+        private void CopyTileResLevel(JP2Codestream dst, JP2Codestream src, ushort tIdx, int r)
         {
-            var dstTilePart = dst.CreateTilePart(tIdx, true);
+            int decomps = src.DecompositionLevels;
+            var dstTilePart = dst.CreateTilePart(tIdx, r == decomps);
 
             // get all packets for this resolution level and source tile
             // currently support only a single tile in source image for every
             // destination tile.
-            QueryPlanner qp = OpenQuery(tIdx);
-            var intervals = qp
-                .Reset()
-                .Tile(0)
+            QueryContext queryContext = new QueryContext(src, 0);
+            PreciseQuery preciseQuery = PreciseQuery.Create(queryContext);
+            var intervals = preciseQuery
                 .Resolution(r)
                 .Execute();
+            JP2Tile srcTile = src.Tiles[0];
             // add packet lengths
             Func<JP2TilePart, int, int, int, int> addPacketLengths =
                 (tpSrc, pckStart, pckCount, voidParam) =>
@@ -283,6 +263,7 @@ namespace jp2merge
                 srcTile,
                 bulkTransfer);
             dstTilePart.Close();
+            srcTile.Close();
         }
 
         private void Dispose()
@@ -328,16 +309,6 @@ namespace jp2merge
                 _jp2s[idx] = Jp2File.Open(OpenStream(idx));
             }
             return _jp2s[idx];
-        }
-
-        private QueryPlanner OpenQuery(int idx)
-        {
-            if (_queries[idx] == null)
-            {
-                var cs = OpenJp2(idx).OpenCodestream();
-                _queries[idx] = QueryPlanner.Create(cs);
-            }
-            return _queries[idx];
         }
 
         private FileStream OpenStream(int idx)

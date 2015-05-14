@@ -61,6 +61,8 @@
     <Compile Include="StructuralTraversalTest.cs" />
     <Compile Include="CreateImageTest.cs" />
     <Compile Include="CopyDataTest.cs" />
+    <Compile Include="PreciseQueryTest.cs" />
+    <Compile Include="PreciseQueryWithPositionsTest.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Skyreach\Skyreach.csproj">
@@ -78,6 +80,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="images\test_LRtCP_L2R3T512.jp2">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="images\test_RtPCL_L4R5P128T200.jp2">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

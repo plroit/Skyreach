@@ -61,5 +61,10 @@ namespace Skyreach.Query
             }
             return flattened;
         }
+
+        public List<PacketInterval> ToList()
+        {
+            return new List<PacketInterval>() { this };
+        }
     }
 }

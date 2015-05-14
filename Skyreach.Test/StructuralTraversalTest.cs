@@ -33,6 +33,7 @@ namespace Skyreach.Test
         }
 
         [TestMethod]
+        [TestCategory("Traversal")]
         public void CountTilePartsTest()
         {
             // in LRCP progression, created a tile-part for
@@ -56,6 +57,7 @@ namespace Skyreach.Test
         }
 
         [TestMethod]
+        [TestCategory("Traversal")]
         public void CountPacketsInFirstTile()
         {
             var packets = _cs.Tiles[0].GetPacketCounts().ToArray();
@@ -69,6 +71,7 @@ namespace Skyreach.Test
         }
 
         [TestMethod]
+        [TestCategory("Traversal")]
         public void TestEqualTilePartAndPacketLengths()
         {
             // Tile-Part Length property is taken from either
