@@ -71,9 +71,14 @@
     <Compile Include="Jp2\Codestream\ProgressionOrder.cs" />
     <Compile Include="Jp2\Codestream\Markers\QcdMarker.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Query\BoundingBox\BoundingBoxQuery.cs" />
+    <Compile Include="Query\Jp2PacketProps.cs" />
+    <Compile Include="Query\PacketEnumerator.cs" />
     <Compile Include="Query\PacketInterval.cs" />
+    <Compile Include="Query\Precise\PreciseQuery.cs" />
+    <Compile Include="Query\Precise\RpclPreciseQuery.cs" />
+    <Compile Include="Query\QueryContext.cs" />
     <Compile Include="Query\QueryPlanner.cs" />
-    <Compile Include="Query\RPCLQueryPlanner.cs" />
     <Compile Include="Util\BigEndBinaryReader.cs" />
     <Compile Include="Util\BigEndBinaryWriter.cs" />
     <Compile Include="Util\BitHacks.cs" />

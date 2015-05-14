@@ -51,6 +51,7 @@ namespace Skyreach.Test
         }
 
         [TestMethod]
+        [TestCategory("Transcode")]
         public void ReadBackPacketLengths()
         {
             // Test if the packet lengths we have
@@ -73,6 +74,7 @@ namespace Skyreach.Test
         }
 
         [TestMethod]
+        [TestCategory("Transcode")]
         public void CompareMainHeaderMarkers()
         {
             // Test to see if the SIZ, COD and QCD markers

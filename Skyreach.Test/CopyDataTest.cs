@@ -35,6 +35,7 @@ namespace Skyreach.Test
         }
 
         [TestMethod]
+        [TestCategory("Transcode")]
         public void CopyTilePartTest()
         {
             _mem.Seek(0, SeekOrigin.Begin);

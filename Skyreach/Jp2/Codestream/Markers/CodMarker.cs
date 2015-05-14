@@ -14,6 +14,12 @@ namespace Skyreach.Jp2.Codestream.Markers
     {
 
         public const int MAX_CBLK_SIZE = 1 << 12; // 4096 samples in codeblock
+
+        private const byte MAX_CODSTYLE = (byte) 
+            (CodingStyle.UseEphMarker |
+            CodingStyle.UseSopMarker |
+            CodingStyle.UsePrecincts);
+
         protected internal CodMarker(ushort markerLength, byte[] markerBody)
             : base(MarkerType.COD, markerLength, markerBody)
         {
@@ -228,16 +234,12 @@ namespace Skyreach.Jp2.Codestream.Markers
 
             Stream mem = new MemoryStream(_markerBody);
             byte scod = mem.ReadUInt8();
-            // http://msdn.microsoft.com/en-us/library/system.enum.isdefined(v=vs.110).aspx
-            // If enumType is an enumeration that is defined by using the 
-            // FlagsAttribute attribute, the method returns false if multiple
-            // bit fields in value are set but value does not correspond to a 
-            // composite enumeration value
-            if(!Enum.IsDefined(typeof(CodingStyle), scod))
+            
+            if(scod > MAX_CODSTYLE)
             {
-                throw new ArgumentException(
-                    "CodingStyle is undefined");
+                throw new ArgumentOutOfRangeException("CodingStyle");
             }
+
             _scod = (CodingStyle) scod;
 
             byte progOrder = mem.ReadUInt8();

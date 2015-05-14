@@ -585,8 +585,8 @@ namespace Skyreach.Jp2.Codestream
 
             UnderlyingIO.Seek(Position + _sotOffset, SeekOrigin.Begin);
 
-            MarkerType type;
             long offset = _sotOffset;
+            MarkerType type;
             while ((type = MarkerSegment.Peek(UnderlyingIO)) != MarkerType.EOC)
             {
                 if (type != MarkerType.SOT)
@@ -606,9 +606,12 @@ namespace Skyreach.Jp2.Codestream
                         " calculated from SIZ tile and image size");
                 }
                 AddTilePart(offset, sot.TileIndex, sot.TilePartLength);
-
-                long skip = sot.TilePartLength - SotMarker.SOT_MARKER_LENGTH;
                 offset += sot.TilePartLength;
+                // skip to the next marker segment,
+                // account for the already read SOT_MARKER
+                long skip = sot.TilePartLength;
+                skip -= SotMarker.SOT_MARKER_LENGTH;
+                skip -= MarkerSegment.MarkerLength;
                 UnderlyingIO.Seek(skip, SeekOrigin.Current);
             }
             return;

@@ -34,6 +34,7 @@ namespace Skyreach.Test
         }
 
         [TestMethod]
+        [TestCategory("Traversal")]
         public void OpenImage()
         {
             Jp2File jp2 = Jp2File.Open(_fs);
